@@ -135,9 +135,27 @@ npm run cap:open     # build the signed AAB in Android Studio
 See [`capacitor.config.ts`](capacitor.config.ts) and
 [`assets/manifest/README.md`](assets/manifest/README.md) for details.
 
-## Customization
+## Coins & betting
 
+- New players start with **10,000 coins**.
+- **Daily bonus:** claim **1% of your max balance ever** once per day on the
+  home screen. It must be collected each day and does not accrue.
+- Before each game, set your **bet** with the slider (defaults to 10% of your
+  balance). Every side antes the bet into a prize fund; the winning side(s)
+  split it. Leaderboard ties share equally.
+
+## Scoring
+
+Each side scores **+1 per ten (mindi) captured** and **+1 for the most tricks**
+("hands"; tied sides each get the bonus). Most total points wins the round.
+
+## Art & audio
+
+- **Card faces & a card back** are bundled (52 cards + back) from a
+  **public-domain** deck — see [`public/cards/CREDITS.md`](public/cards/CREDITS.md).
+  Missing files fall back to procedural drawing.
 - **Card backs & tables:** pick in-game under *Skins & Audio*; add new ones in
   [`src/ui/skins/skins.ts`](src/ui/skins/skins.ts).
-- **Music & SFX:** generative by default; drop real files in `public/audio/`
-  (see the asset manifest).
+- **Music & SFX:** generative by default (separate home/game tracks, no binary
+  assets). To use real tracks, drop files in `public/audio/` and load them in
+  `BootScene` — see [`assets/manifest/README.md`](assets/manifest/README.md).

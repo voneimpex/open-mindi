@@ -19,7 +19,7 @@ const DEFAULTS: AppSettings = {
   mode: 'mindi',
   players: 4,
   difficulty: 'learner',
-  cardBack: 'classic-blue',
+  cardBack: 'classic-art',
   table: 'green-felt',
   musicVolume: 0.5,
   sfxVolume: 0.8

@@ -31,6 +31,7 @@ export interface TableSkin {
 }
 
 export const CARD_BACKS: CardBackSkin[] = [
+  { id: 'classic-art', name: 'Classic Art', color: 0x7a1f2b, accent: 0xffd76b, texture: 'card-back-art' },
   { id: 'classic-blue', name: 'Classic Blue', color: 0x1a3a8f, accent: 0x9fb8ff },
   { id: 'royal-red', name: 'Royal Red', color: 0x8f1a2a, accent: 0xffb3bd },
   { id: 'emerald', name: 'Emerald', color: 0x0f6b4a, accent: 0x9cf2cf },
