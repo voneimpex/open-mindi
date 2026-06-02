@@ -23,6 +23,14 @@ export class BootScene extends Phaser.Scene {
     const s = loadSettings();
     audio.setMusicVolume(s.musicVolume);
     audio.setSfxVolume(s.sfxVolume);
+
+    // Load the bundled CC0 music tracks (see public/audio/CREDITS.md). These
+    // load in the background; until they're ready the generative tracks play,
+    // then loadTrack hot-swaps to the file. Falls back silently on error.
+    const baseUrl = import.meta.env.BASE_URL;
+    audio.loadTrack('home', `${baseUrl}audio/home.mp3`).catch(() => {});
+    audio.loadTrack('game', `${baseUrl}audio/game.mp3`).catch(() => {});
+
     this.scene.start('Home');
   }
 }

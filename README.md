@@ -156,6 +156,7 @@ Each side scores **+1 per ten (mindi) captured** and **+1 for the most tricks**
   Missing files fall back to procedural drawing.
 - **Card backs & tables:** pick in-game under *Skins & Audio*; add new ones in
   [`src/ui/skins/skins.ts`](src/ui/skins/skins.ts).
-- **Music & SFX:** generative by default (separate home/game tracks, no binary
-  assets). To use real tracks, drop files in `public/audio/` and load them in
-  `BootScene` — see [`assets/manifest/README.md`](assets/manifest/README.md).
+- **Music:** two **CC0 (public-domain)** tracks are bundled — a calm menu theme
+  and a ragtime table theme (see [`public/audio/CREDITS.md`](public/audio/CREDITS.md)).
+  Fully generative music plays as a fallback if the files are missing. Replace
+  the files in `public/audio/` to use your own. SFX are generative.

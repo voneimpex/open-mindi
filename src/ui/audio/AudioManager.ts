@@ -84,6 +84,9 @@ export class AudioManager {
     const res = await fetch(url);
     const buf = await res.arrayBuffer();
     this.fileBuffers.set(name, await ctx.decodeAudioData(buf));
+    // If this track is the one currently playing, swap from the generative
+    // version to the real file now that it's ready.
+    if (this.unlocked && this.current === name) this.playMusic(name);
   }
 
   playMusic(name: TrackName): void {
