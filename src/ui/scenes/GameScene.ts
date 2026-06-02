@@ -329,6 +329,7 @@ export class GameScene extends Phaser.Scene {
       if (this.engine.state.phase === 'round-over') this.showRoundOver();
       return;
     }
+    if (this.busy) return; // a move or animation is already in flight
     this.updateHud();
     if (this.engine.isHumansTurn()) {
       this.enableHumanInput();
@@ -336,9 +337,14 @@ export class GameScene extends Phaser.Scene {
       const seat = this.engine.state.turnSeat;
       const bot = this.bots[seat]!;
       this.disableHumanInput();
+      // Lock during the bot's "thinking" pause so nothing schedules a second
+      // move for this seat; re-verify the turn when the timer fires.
+      this.busy = true;
       this.time.delayedCall(550, () => {
-        const move = bot.chooseMove(this.engine.state, seat);
-        this.applyMove(move);
+        this.busy = false;
+        if (this.engine.state.phase === 'playing' && this.engine.state.turnSeat === seat) {
+          this.applyMove(bot.chooseMove(this.engine.state, seat));
+        }
       });
     }
   }
@@ -398,6 +404,11 @@ export class GameScene extends Phaser.Scene {
   // ---- applying a move with animation ------------------------------------
 
   private applyMove(move: Move): void {
+    // Ignore stale / out-of-turn moves (e.g. a late timer or double tap) so a
+    // rejected play can never throw and leave the table soft-locked.
+    if (this.engine.state.phase !== 'playing' || move.seat !== this.engine.state.turnSeat) {
+      return;
+    }
     this.busy = true;
     const seat = move.seat;
     const slot = this.seats[seat];

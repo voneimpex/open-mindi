@@ -43,10 +43,19 @@ export class AudioManager {
   musicVolume = 0.5;
   sfxVolume = 0.8;
   private unlocked = false;
+  /** Set when the Web Audio API is unavailable (e.g. some WebViews). The game
+   *  then runs silently instead of crashing. */
+  private unavailable = false;
 
-  private ensure(): AudioContext {
+  /** Lazily create the AudioContext. Returns null when Web Audio is missing. */
+  private ensure(): AudioContext | null {
+    if (this.unavailable) return null;
     if (!this.ctx) {
       const Ctor = window.AudioContext || (window as any).webkitAudioContext;
+      if (!Ctor) {
+        this.unavailable = true;
+        return null;
+      }
       this.ctx = new Ctor();
       this.musicGain = this.ctx.createGain();
       this.sfxGain = this.ctx.createGain();
@@ -59,6 +68,7 @@ export class AudioManager {
 
   unlock(): void {
     const ctx = this.ensure();
+    if (!ctx) return; // no Web Audio: stay silent
     if (ctx.state === 'suspended') ctx.resume();
     this.unlocked = true;
     if (this.current) this.playMusic(this.current);
@@ -81,6 +91,7 @@ export class AudioManager {
   /** Optionally preload a real music file to override the generative track. */
   async loadTrack(name: TrackName, url: string): Promise<void> {
     const ctx = this.ensure();
+    if (!ctx) return;
     const res = await fetch(url);
     const buf = await res.arrayBuffer();
     this.fileBuffers.set(name, await ctx.decodeAudioData(buf));
@@ -104,6 +115,7 @@ export class AudioManager {
 
   private playFileTrack(name: TrackName): void {
     const ctx = this.ensure();
+    if (!ctx) return;
     const src = ctx.createBufferSource();
     src.buffer = this.fileBuffers.get(name)!;
     src.loop = true;
@@ -139,6 +151,7 @@ export class AudioManager {
 
   private blip(freq: number, type: OscillatorType, dur: number, dest: GainNode, delay: number): void {
     const ctx = this.ensure();
+    if (!ctx) return;
     const t = ctx.currentTime + delay;
     const osc = ctx.createOscillator();
     const g = ctx.createGain();
