@@ -6,9 +6,12 @@ name: Deploy to GitHub Pages
 # One-time setup: in the repo, go to Settings -> Pages -> "Build and deployment"
 # and set Source to "GitHub Actions". After that this workflow does the rest.
 
+# Runs on merges to main, or on demand from the Actions tab ("Run workflow").
+# It is intentionally NOT run on feature branches so a not-yet-enabled Pages
+# site can't show a red X on every PR push.
 on:
   push:
-    branches: [main, 'claude/open-mindy-card-game-0tWcl']
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -31,7 +34,11 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+      # enablement:true auto-turns-on Pages via the API when the plan allows it,
+      # so no manual Settings -> Pages step is needed on supported plans.
       - uses: actions/configure-pages@v5
+        with:
+          enablement: true
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
