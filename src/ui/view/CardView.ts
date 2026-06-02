@@ -15,6 +15,7 @@ const RADIUS = 12;
 
 export class CardView extends Phaser.GameObjects.Container {
   card: Card | null;
+  private bg: Phaser.GameObjects.Graphics;
   private gfx: Phaser.GameObjects.Graphics;
   private faceImg: Phaser.GameObjects.Image | null = null;
   private backImg: Phaser.GameObjects.Image | null = null;
@@ -27,8 +28,9 @@ export class CardView extends Phaser.GameObjects.Container {
     super(scene, 0, 0);
     this.card = card;
     this.back = back;
-    this.gfx = scene.add.graphics();
-    this.add(this.gfx);
+    this.bg = scene.add.graphics(); // white card body, behind the (transparent) art
+    this.gfx = scene.add.graphics(); // border / highlight, above the art
+    this.add([this.bg, this.gfx]);
     this.setSize(CARD_W, CARD_H);
     this.redraw();
     scene.add.existing(this);
@@ -68,17 +70,20 @@ export class CardView extends Phaser.GameObjects.Container {
     if (!img) {
       img = this.scene.add.image(0, 0, key);
       this.add(img);
-      this.sendToBack(img); // keep art beneath the border/highlight graphics
       if (which === 'face') this.faceImg = img;
       else this.backImg = img;
     }
     img.setTexture(key).setDisplaySize(CARD_W, CARD_H).setVisible(true);
+    // Keep z-order: bg (white body) at the back, then art, then border on top.
+    this.sendToBack(this.bg);
+    this.bringToTop(this.gfx);
     return img;
   }
 
   private redraw(): void {
     const g = this.gfx;
     g.clear();
+    this.bg.clear();
     this.clearTexts();
     if (this.faceImg) this.faceImg.setVisible(false);
     if (this.backImg) this.backImg.setVisible(false);
@@ -89,12 +94,12 @@ export class CardView extends Phaser.GameObjects.Container {
       const key = faceTextureKey(this.card);
       const isMindi = this.card.rank === 10;
       if (this.scene.textures.exists(key)) {
+        // The art is transparent, so paint a white card body behind it.
+        this.bg.fillStyle(0xffffff, 1);
+        this.bg.fillRoundedRect(-hw, -hh, CARD_W, CARD_H, RADIUS);
         this.ensureImg('face', key);
-        this.bringToTop(g);
-        if (isMindi) {
-          g.lineStyle(3, 0xffd24a, 1);
-          g.strokeRoundedRect(-hw, -hh, CARD_W, CARD_H, RADIUS);
-        }
+        g.lineStyle(isMindi ? 3 : 1.5, isMindi ? 0xffd24a : 0xcccccc, 1);
+        g.strokeRoundedRect(-hw, -hh, CARD_W, CARD_H, RADIUS);
         if (this.highlight) {
           g.lineStyle(4, 0xffe066, 1);
           g.strokeRoundedRect(-hw, -hh, CARD_W, CARD_H, RADIUS);
@@ -108,8 +113,9 @@ export class CardView extends Phaser.GameObjects.Container {
     // face down
     const backKey = this.back.texture;
     if (backKey && this.scene.textures.exists(backKey)) {
+      this.bg.fillStyle(this.back.color, 1);
+      this.bg.fillRoundedRect(-hw, -hh, CARD_W, CARD_H, RADIUS);
       this.ensureImg('back', backKey);
-      this.bringToTop(g);
       if (this.highlight) {
         g.lineStyle(4, 0xffe066, 1);
         g.strokeRoundedRect(-hw, -hh, CARD_W, CARD_H, RADIUS);
