@@ -1,45 +1,61 @@
 /**
- * Computes seat positions around an oval table. The human (seat 0) always sits
- * at the bottom; bots are distributed around the rest of the oval. Recomputed
- * on resize so rotating the device re-lays out the table naturally.
+ * Seat geometry. The human (seat 0) sits at the bottom; the bots are spread on
+ * an arc across the top half of the table, which keeps the center clear for the
+ * trick pile and keeps every station away from the middle text. Recomputed on
+ * resize so rotating the device just re-lays things out.
  */
 
+export type SeatSide = 'bottom' | 'top';
+
 export interface SeatSlot {
-  /** Anchor point for the seat's hand/piles (center of that seat's area). */
+  /** Anchor for the seat's pile row (its visual center). */
   x: number;
   y: number;
-  /** Angle (radians) pointing from table center toward the seat — used to
-   *  orient labels and the direction cards travel when played. */
-  angle: number;
-  /** A point a bit toward the table center, where this seat's trick card lands. */
+  side: SeatSide;
+  /** Where this seat's card lands in the center trick pile. */
   trickX: number;
   trickY: number;
 }
 
-export function computeSeats(
-  width: number,
-  height: number,
-  players: number
-): SeatSlot[] {
+export function computeSeats(width: number, height: number, players: number): SeatSlot[] {
   const cx = width / 2;
   const cy = height / 2;
-  const rx = width * 0.40;
-  const ry = height * 0.40;
-  const trx = width * 0.16;
-  const trY = height * 0.16;
-
   const slots: SeatSlot[] = [];
-  // Seat 0 at the bottom (angle = +90deg = Math.PI/2), others spread evenly
-  // going clockwise so play order reads left-to-right across the top.
-  for (let i = 0; i < players; i++) {
-    const angle = Math.PI / 2 + (i * 2 * Math.PI) / players;
-    slots.push({
-      x: cx + Math.cos(angle) * rx,
-      y: cy + Math.sin(angle) * ry,
-      angle,
-      trickX: cx + Math.cos(angle) * trx,
-      trickY: cy + Math.sin(angle) * trY
-    });
+
+  // Trick pile sits just below the middle (trump text goes above the middle).
+  const trickCx = cx;
+  const trickCy = cy + height * 0.04;
+  const trickR = Math.min(width, height) * 0.11;
+
+  // Human at the bottom.
+  const humanY = height * 0.82;
+  slots[0] = {
+    x: cx,
+    y: humanY,
+    side: 'bottom',
+    trickX: trickCx,
+    trickY: trickCy + trickR
+  };
+
+  // Bots across a top arc, from middle-left, over the top, to middle-right.
+  const k = players - 1;
+  const rx = width * 0.37;
+  const ry = height * 0.28;
+  const arcCy = height * 0.40;
+  for (let j = 0; j < k; j++) {
+    const a = (Math.PI * (j + 0.5)) / k; // 0 (left) .. PI (right)
+    const x = cx - Math.cos(a) * rx;
+    const y = arcCy - Math.sin(a) * ry;
+    const dx = x - trickCx;
+    const dy = y - trickCy;
+    const len = Math.hypot(dx, dy) || 1;
+    slots[j + 1] = {
+      x,
+      y,
+      side: 'top',
+      trickX: trickCx + (dx / len) * trickR,
+      trickY: trickCy + (dy / len) * trickR
+    };
   }
   return slots;
 }
