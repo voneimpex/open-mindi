@@ -133,6 +133,16 @@ describe('full games run to completion vs bots', () => {
           expect(captured).toBe(cardsPerRound);
           const result = scoreRound(g.state);
           expect(result.winners.length).toBeGreaterThan(0);
+          // points == mindis + trick bonus; bonus only for the most-tricks side(s)
+          for (const side of result.sides) {
+            expect(side.points).toBe(side.mindis + side.trickBonus);
+            expect(side.trickBonus).toBe(side.tricks === result.maxTricks ? 1 : 0);
+          }
+          // winners hold the max points
+          const maxPts = Math.max(...result.sides.map((s) => s.points));
+          for (const wid of result.winners) {
+            expect(result.sides.find((s) => s.id === wid)!.points).toBe(maxPts);
+          }
           // total tricks == cards / players
           const totalTricks = g.state.tricksWon.reduce((a, b) => a + b, 0);
           expect(totalTricks).toBe(cardsPerRound / players);

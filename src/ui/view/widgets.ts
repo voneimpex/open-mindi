@@ -55,6 +55,74 @@ export function makeButton(
   return c;
 }
 
+export interface Slider extends Phaser.GameObjects.Container {
+  getValue(): number;
+  setValue(v: number): void;
+  setRange(min: number, max: number, value: number): void;
+}
+
+/**
+ * A draggable horizontal slider ("cursor") used for choosing the bet amount.
+ * Values are clamped to [min, max] and snapped to integers.
+ */
+export function makeSlider(
+  scene: Phaser.Scene,
+  x: number,
+  y: number,
+  width: number,
+  min: number,
+  max: number,
+  value: number,
+  onChange: (v: number) => void
+): Slider {
+  const c = scene.add.container(x, y) as Slider;
+  const track = scene.add.graphics();
+  const knob = scene.add.circle(0, 0, 14, 0xffb703).setStrokeStyle(2, 0xffffff);
+  c.add([track, knob]);
+
+  let lo = min;
+  let hi = Math.max(min, max);
+  let val = Phaser.Math.Clamp(value, lo, hi);
+
+  const half = width / 2;
+  const toX = (v: number) => (hi <= lo ? -half : -half + ((v - lo) / (hi - lo)) * width);
+  const fromX = (px: number) => (hi <= lo ? lo : Math.round(lo + ((px + half) / width) * (hi - lo)));
+
+  const redraw = () => {
+    track.clear();
+    track.fillStyle(0x0c2e22, 1);
+    track.lineStyle(2, 0xffffff, 0.2);
+    track.fillRoundedRect(-half, -6, width, 12, 6);
+    track.strokeRoundedRect(-half, -6, width, 12, 6);
+    const kx = toX(val);
+    track.fillStyle(0x2bb673, 1);
+    track.fillRoundedRect(-half, -6, kx + half, 12, 6);
+    knob.setPosition(kx, 0);
+  };
+  redraw();
+
+  knob.setInteractive(new Phaser.Geom.Circle(0, 0, 22), Phaser.Geom.Circle.Contains);
+  scene.input.setDraggable(knob);
+  knob.on('drag', (_p: Phaser.Input.Pointer, dragX: number) => {
+    val = Phaser.Math.Clamp(fromX(Phaser.Math.Clamp(dragX, -half, half)), lo, hi);
+    redraw();
+    onChange(val);
+  });
+
+  c.getValue = () => val;
+  c.setValue = (v: number) => {
+    val = Phaser.Math.Clamp(Math.round(v), lo, hi);
+    redraw();
+  };
+  c.setRange = (mn: number, mx: number, v: number) => {
+    lo = mn;
+    hi = Math.max(mn, mx);
+    val = Phaser.Math.Clamp(Math.round(v), lo, hi);
+    redraw();
+  };
+  return c;
+}
+
 export function drawTableBackground(
   _scene: Phaser.Scene,
   g: Phaser.GameObjects.Graphics,

@@ -112,32 +112,43 @@ export interface SeatScore {
   tricks: number;
 }
 
-export interface TeamScore {
-  team: number;
+/** A scoring side: a team (in team games) or a single seat (individual games). */
+export interface SideScore {
+  /** team id in team games, otherwise the seat index. */
+  id: number;
   seats: number[];
   mindis: number;
   tricks: number;
+  /** +1 if this side has (or ties for) the most tricks this round. */
+  trickBonus: number;
+  /** mindis + trickBonus. */
+  points: number;
 }
 
 export interface RoundResult {
   perSeat: SeatScore[];
-  perTeam: TeamScore[];
+  /** Scoring sides (teams or individuals) with points breakdown. */
+  sides: SideScore[];
   /** Total mindis in play this round (for "got all the tens" detection). */
   totalMindis: number;
-  /** Winning team id(s) or seat(s) — those with the most mindis. Ties share. */
+  /** Highest trick count among sides this round. */
+  maxTricks: number;
+  /** Winning side id(s) — those with the most points. Ties share. */
   winners: number[];
   /** "whitewash": a single side captured every mindi in the round. */
   whitewash: boolean;
-  /** true when winners are teams, false when winners are individual seats. */
+  /** true when sides are teams, false when sides are individual seats. */
   byTeam: boolean;
 }
 
 /**
  * Score a finished round.
  *
- * Primary objective per the design notes: capture as many mindis (tens) as
- * possible. The side with the most captured mindis wins the point; ties share.
- * Tricks won are tracked and reported as a tie-breaker / secondary stat.
+ * Points per side:
+ *   - +1 for every mindi (ten) captured, and
+ *   - +1 for having the most tricks ("hands"); if several sides tie for the
+ *     most tricks they each get the bonus point.
+ * The side(s) with the most total points win the round; ties share the prize.
  */
 export function scoreRound(state: GameState): RoundResult {
   const perSeat: SeatScore[] = state.playerList.map((p) => ({
@@ -147,32 +158,37 @@ export function scoreRound(state: GameState): RoundResult {
   }));
 
   const totalMindis = perSeat.reduce((s, x) => s + x.mindis, 0);
-
-  // Aggregate to teams (individual games: each seat is its own team).
-  const teamMap = new Map<number, TeamScore>();
-  for (const p of state.playerList) {
-    const t = teamMap.get(p.team) ?? { team: p.team, seats: [], mindis: 0, tricks: 0 };
-    t.seats.push(p.seat);
-    t.mindis += perSeat[p.seat].mindis;
-    t.tricks += perSeat[p.seat].tricks;
-    teamMap.set(p.team, t);
-  }
-  const perTeam = [...teamMap.values()].sort((a, b) => a.team - b.team);
-
   const byTeam = state.teams;
-  const groups = byTeam
-    ? perTeam.map((t) => ({ id: t.team, mindis: t.mindis, tricks: t.tricks }))
-    : perSeat.map((s) => ({ id: s.seat, mindis: s.mindis, tricks: s.tricks }));
 
-  const maxMindis = Math.max(...groups.map((g) => g.mindis));
-  // Tie-break by tricks when mindis are equal at the top.
-  const topByMindi = groups.filter((g) => g.mindis === maxMindis);
-  const maxTricks = Math.max(...topByMindi.map((g) => g.tricks));
-  const winners = topByMindi.filter((g) => g.tricks === maxTricks).map((g) => g.id);
+  // Aggregate seats into sides (individual games: each seat is its own side).
+  const sideMap = new Map<number, SideScore>();
+  for (const p of state.playerList) {
+    const id = byTeam ? p.team : p.seat;
+    const side = sideMap.get(id) ?? { id, seats: [], mindis: 0, tricks: 0, trickBonus: 0, points: 0 };
+    side.seats.push(p.seat);
+    side.mindis += perSeat[p.seat].mindis;
+    side.tricks += perSeat[p.seat].tricks;
+    sideMap.set(id, side);
+  }
+  const sides = [...sideMap.values()].sort((a, b) => a.id - b.id);
 
-  const whitewash = maxMindis === totalMindis && winners.length === 1 && totalMindis > 0;
+  // Trick bonus: every side tied for the most tricks gets +1 point.
+  const maxTricks = Math.max(...sides.map((s) => s.tricks));
+  for (const s of sides) {
+    s.trickBonus = s.tricks === maxTricks ? 1 : 0;
+    s.points = s.mindis + s.trickBonus;
+  }
 
-  return { perSeat, perTeam, totalMindis, winners, whitewash, byTeam };
+  const maxPoints = Math.max(...sides.map((s) => s.points));
+  const winners = sides.filter((s) => s.points === maxPoints).map((s) => s.id);
+
+  const maxMindis = Math.max(...sides.map((s) => s.mindis));
+  const whitewash =
+    maxMindis === totalMindis &&
+    sides.filter((s) => s.mindis === maxMindis).length === 1 &&
+    totalMindis > 0;
+
+  return { perSeat, sides, totalMindis, maxTricks, winners, whitewash, byTeam };
 }
 
 /** Helper to test two cards being "the same card" for tie reporting. */

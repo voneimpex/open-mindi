@@ -16,8 +16,11 @@ import {
   isMindi
 } from '../../engine';
 import { Bot, createBot } from '../../ai';
+import { applyDelta, loadWallet, recommendedBet, saveWallet, settleGame } from '../economy/Wallet';
 
 const TEAM_COLORS = ['#ffd24a', '#7fd0ff'];
+
+export type GameSceneData = AppSettings & { bet?: number };
 
 export class GameScene extends Phaser.Scene {
   private settings!: AppSettings;
@@ -45,13 +48,16 @@ export class GameScene extends Phaser.Scene {
 
   private cardScale = 0.7;
   private busy = false;
+  private bet = 0;
 
   constructor() {
     super('Game');
   }
 
-  init(data: AppSettings): void {
+  init(data: GameSceneData): void {
     this.settings = data;
+    const wallet = loadWallet();
+    this.bet = Math.min(data.bet ?? recommendedBet(wallet.balance), wallet.balance);
   }
 
   create(): void {
@@ -496,41 +502,60 @@ export class GameScene extends Phaser.Scene {
     this.overlay.fillStyle(0x000000, 0.72);
     this.overlay.fillRect(0, 0, w, h);
 
-    const cont = this.add.container(w / 2, h / 2).setDepth(950);
-    const lines: string[] = [];
-    if (result.byTeam) {
-      for (const t of result.perTeam) {
-        const seats = t.seats.map((s) => this.engine.state.playerList[s].name).join(' & ');
-        lines.push(`Team ${t.team + 1} (${seats}):  ${t.mindis} tens, ${t.tricks} tricks`);
-      }
-      const winNames = result.winners
-        .map((tid) => `Team ${tid + 1}`)
-        .join(', ');
-      lines.push('');
-      lines.push(result.whitewash ? `🏆 ${winNames} sweep all the tens!` : `🏆 Winner: ${winNames}`);
-    } else {
-      for (const s of result.perSeat) {
-        lines.push(`${this.engine.state.playerList[s.seat].name}:  ${s.mindis} tens, ${s.tricks} tricks`);
-      }
-      const winNames = result.winners.map((sid) => this.engine.state.playerList[sid].name).join(', ');
-      lines.push('');
-      lines.push(result.whitewash ? `🏆 ${winNames} swept all the tens!` : `🏆 Winner: ${winNames}`);
-    }
+    // Settle the bet into the prize fund and update the wallet.
+    const settle = settleGame(result, this.bet, 0);
+    let wallet = applyDelta(loadWallet(), settle.net);
+    saveWallet(wallet);
 
-    const title = this.add.text(0, -h * 0.22, 'Round Over', {
-      fontFamily: 'Georgia, serif', fontSize: '44px', color: '#ffd24a', fontStyle: 'bold'
+    const cont = this.add.container(w / 2, h / 2).setDepth(950);
+    const sideName = (id: number): string => {
+      const side = result.sides.find((s) => s.id === id)!;
+      const names = side.seats.map((s) => this.engine.state.playerList[s].name).join(' & ');
+      return result.byTeam ? `Team ${id + 1} (${names})` : names;
+    };
+
+    const lines: string[] = [];
+    for (const s of result.sides) {
+      const bonus = s.trickBonus ? ' +1 hands' : '';
+      lines.push(`${sideName(s.id)} — ${s.points} pts  (${s.mindis} tens${bonus}, ${s.tricks} tricks)`);
+    }
+    lines.push('');
+    const winNames = result.winners.map(sideName).join(', ');
+    if (result.whitewash) lines.push(`🏆 ${winNames} swept all the tens!`);
+    else if (result.winners.length > 1) lines.push(`🤝 Tie — prize split: ${winNames}`);
+    else lines.push(`🏆 Winner: ${winNames}`);
+
+    const title = this.add.text(0, -h * 0.26, 'Round Over', {
+      fontFamily: 'Georgia, serif', fontSize: '42px', color: '#ffd24a', fontStyle: 'bold'
     }).setOrigin(0.5);
-    const body = this.add.text(0, -h * 0.05, lines.join('\n'), {
-      fontFamily: 'system-ui, sans-serif', fontSize: '22px', color: '#ffffff', align: 'center', lineSpacing: 8
+    const body = this.add.text(0, -h * 0.08, lines.join('\n'), {
+      fontFamily: 'system-ui, sans-serif', fontSize: '20px', color: '#ffffff', align: 'center', lineSpacing: 8
     }).setOrigin(0.5);
     cont.add([title, body]);
 
-    const again = makeButton(this, -130, h * 0.28, 'Play Again', () => {
+    // Coins outcome
+    const fmt = (n: number) => n.toLocaleString();
+    const outcome = settle.won
+      ? `${settle.shared ? 'Shared win' : 'You won'}  +${fmt(settle.payout - this.bet)} coins`
+      : `You lost  −${fmt(this.bet)} coins`;
+    const coinLine = `Bet ${fmt(this.bet)} • Prize fund ${fmt(settle.pot)}`;
+    const coins = this.add.text(0, h * 0.16, `${coinLine}\n${outcome}\n💰 Balance: ${fmt(wallet.balance)}`, {
+      fontFamily: 'system-ui, sans-serif',
+      fontSize: '22px',
+      color: settle.won ? '#9cf2cf' : '#ff9a9a',
+      align: 'center',
+      lineSpacing: 6,
+      fontStyle: 'bold'
+    }).setOrigin(0.5);
+    cont.add(coins);
+
+    const again = makeButton(this, -130, h * 0.34, 'Play Again', () => {
       cont.destroy();
       this.overlay.clear();
-      this.scene.restart(this.settings);
+      const bet = Math.min(this.bet, loadWallet().balance);
+      this.scene.restart({ ...this.settings, bet });
     }, { w: 220, h: 60, active: true });
-    const menu = makeButton(this, 130, h * 0.28, 'Main Menu', () => this.scene.start('Home'), { w: 220, h: 60 });
+    const menu = makeButton(this, 130, h * 0.34, 'Main Menu', () => this.scene.start('Home'), { w: 220, h: 60 });
     cont.add([again, menu]);
   }
 }
