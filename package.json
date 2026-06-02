@@ -1,0 +1,26 @@
+{
+  "name": "open-mindi",
+  "version": "0.1.0",
+  "description": "Open Mindi - a 2-6 player Mendikot-style trick-taking card game vs bots, for mobile (Play Store) and web.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "cap:sync": "cap sync android",
+    "cap:open": "cap open android"
+  },
+  "keywords": ["card-game", "mindi", "mendikot", "phaser", "trick-taking"],
+  "license": "MIT",
+  "dependencies": {
+    "phaser": "^3.80.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4",
+    "vite": "^5.4.2",
+    "vitest": "^2.0.5"
+  }
+}
