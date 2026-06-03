@@ -55,9 +55,10 @@ Once installed it opens full-screen and works **offline**.
 
 ## 💾 Run it on your PC (single file)
 
-A self-contained **`game.html`** is included in this repo. Download that one
-file and **double-click it** — it runs in any modern browser, no internet and no
-install required. (Played standalone it uses the built-in card art and music.)
+The **`download/`** folder contains one self-contained file —
+**`Open-Mindi.html`**. Download it and **double-click it** to play in any modern
+browser: no internet, no install, nothing else needed. The whole game (code,
+**real card art and music**) is baked into that single file.
 
 ---
 

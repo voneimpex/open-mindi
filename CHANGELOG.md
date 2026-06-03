@@ -19,9 +19,10 @@ All notable changes to the game, newest first.
 - **Installable app (PWA).** Added app icons, a service worker (offline play),
   and an **⤓ Install App** button on the home screen so you can play full-screen
   without the browser bar. iOS shows "Add to Home Screen" guidance.
-- **Single-file build.** `npm run build:single` produces a self-contained
-  **`game.html`** you can download and double-click to run anywhere — no server,
-  no install. (Uses procedural cards + generative audio when run standalone.)
+- **One-file offline download.** `npm run build:single` produces
+  **`download/Open-Mindi.html`** — a single self-contained file with the whole
+  game inlined (code + **real card art + music**). Download it and double-click
+  to play anywhere, fully offline. No server, no install.
 
 ## [0.1.0] — Initial
 
