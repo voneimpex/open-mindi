@@ -36,6 +36,7 @@ export class GameScene extends Phaser.Scene {
   private pileBadges: Phaser.GameObjects.Text[][] = [];
   private pileStacks: Phaser.GameObjects.Graphics[][] = [];
   private handViews: CardView[] = []; // human hand
+  private legalViews: { view: CardView; pc: PlayableCard }[] = [];
   private trickViews = new Map<number, CardView>();
   private hud: {
     name: Phaser.GameObjects.Text;
@@ -80,15 +81,17 @@ export class GameScene extends Phaser.Scene {
     const menuBtn = makeButton(this, 0, 0, '‹ Menu', () => this.scene.start('Home'), { w: 120, h: 40 });
     menuBtn.setDepth(60).setName('menu');
 
+    this.input.on('pointerdown', this.onPointerDown, this);
     this.scale.on('resize', this.layout, this);
     this.layout();
 
     audio.playMusic('game');
     audio.unlock();
-    this.time.delayedCall(500, () => this.nextTurn());
+    this.time.delayedCall(400, () => this.nextTurn());
   }
 
   shutdown(): void {
+    this.input.off('pointerdown', this.onPointerDown, this);
     this.scale.off('resize', this.layout, this);
   }
 
@@ -279,11 +282,10 @@ export class GameScene extends Phaser.Scene {
     const st = this.engine.state;
     for (const player of st.playerList) {
       const mindis = countMindis(player.captured);
-      const tricks = st.tricksWon[player.seat];
+      const hands = st.tricksWon[player.seat];
       const isTurn = st.turnSeat === player.seat && st.phase === 'playing';
       const hud = this.hud[player.seat];
-      const hand = player.hand.length;
-      hud.stats.setText(`✋${hand}  🏆${tricks}  ⑩${mindis}`);
+      hud.stats.setText(`Mindi ${mindis}  ·  Hands ${hands}`);
       // Highlight whose turn it is by brightening the name.
       hud.name.setColor(isTurn ? '#ffe066' : hud.name.getData('baseColor'));
       hud.turn.clear();
@@ -312,7 +314,7 @@ export class GameScene extends Phaser.Scene {
       // Lock during the bot's "thinking" pause so nothing schedules a second
       // move for this seat; re-verify the turn when the timer fires.
       this.busy = true;
-      this.time.delayedCall(550, () => {
+      this.time.delayedCall(350, () => {
         this.busy = false;
         if (this.engine.state.phase === 'playing' && this.engine.state.turnSeat === seat) {
           this.applyMove(bot.chooseMove(this.engine.state, seat));
@@ -323,44 +325,49 @@ export class GameScene extends Phaser.Scene {
 
   private enableHumanInput(): void {
     const legal = this.engine.legalMoves(0);
-    const legalUids = new Set(legal.map((m) => m.card.uid));
-    const bySource = new Map<number, PlayableCard>();
-    for (const m of legal) bySource.set(m.card.uid, m);
+    const byUid = new Map<number, PlayableCard>();
+    for (const m of legal) byUid.set(m.card.uid, m);
 
-    // hand cards
+    this.legalViews = [];
     for (const v of this.handViews) {
-      const ok = v.card && legalUids.has(v.card.uid);
-      v.setHighlight(!!ok);
-      v.disableInteractive();
-      if (ok) {
-        v.setInteractive(new Phaser.Geom.Rectangle(-CARD_W / 2, -CARD_H / 2, CARD_W, CARD_H), Phaser.Geom.Rectangle.Contains);
-        v.once('pointerdown', () => this.humanPlay(bySource.get(v.card!.uid)!));
-      }
+      const pc = v.card ? byUid.get(v.card.uid) : undefined;
+      v.setHighlight(!!pc);
+      if (pc) this.legalViews.push({ view: v, pc });
     }
-    // pile tops (seat 0)
     this.pileTops[0].forEach((v) => {
       if (!v || !v.card) return;
-      const ok = legalUids.has(v.card.uid);
-      v.setHighlight(ok);
-      v.disableInteractive();
-      if (ok) {
-        v.setInteractive(new Phaser.Geom.Rectangle(-CARD_W / 2, -CARD_H / 2, CARD_W, CARD_H), Phaser.Geom.Rectangle.Contains);
-        v.once('pointerdown', () => this.humanPlay(bySource.get(v.card!.uid)!));
-      }
+      const pc = byUid.get(v.card.uid);
+      v.setHighlight(!!pc);
+      if (pc) this.legalViews.push({ view: v, pc });
     });
   }
 
   private disableHumanInput(): void {
-    for (const v of this.handViews) {
-      v.setHighlight(false);
-      v.disableInteractive();
-    }
-    this.pileTops[0].forEach((v) => {
-      if (v) {
-        v.setHighlight(false);
-        v.disableInteractive();
-      }
+    this.legalViews = [];
+    for (const v of this.handViews) v.setHighlight(false);
+    this.pileTops[0].forEach((v) => v && v.setHighlight(false));
+  }
+
+  /**
+   * Global pointer handler. We hit-test the currently-legal cards against the
+   * pointer's world position using each card's on-screen bounds (which already
+   * account for scale and position). This is far more robust than per-object
+   * interactive hit areas, so the whole visible card is clickable — not just
+   * its centre — and overlapping cards resolve to the top-most one.
+   */
+  private onPointerDown(pointer: Phaser.Input.Pointer): void {
+    if (this.busy || this.engine.state.phase !== 'playing' || !this.engine.isHumansTurn()) return;
+    if (!this.legalViews.length) return;
+    const x = pointer.worldX;
+    const y = pointer.worldY;
+    const pad = 6; // a little slack so near-misses still register
+    const hits = this.legalViews.filter(({ view }) => {
+      const b = view.getBounds();
+      return x >= b.x - pad && x <= b.right + pad && y >= b.y - pad && y <= b.bottom + pad;
     });
+    if (!hits.length) return;
+    hits.sort((a, b) => b.view.depth - a.view.depth); // top-most wins
+    this.humanPlay(hits[0].pc);
   }
 
   private humanPlay(pc: PlayableCard): void {
@@ -424,10 +431,10 @@ export class GameScene extends Phaser.Scene {
     this.updateHud();
 
     if (result.trickComplete) {
-      this.time.delayedCall(700, () => this.resolveTrick(result.trickWinnerSeat!, result.roundOver));
+      this.time.delayedCall(600, () => this.resolveTrick(result.trickWinnerSeat!, result.roundOver));
     } else {
       this.busy = false;
-      this.time.delayedCall(250, () => this.nextTurn());
+      this.time.delayedCall(150, () => this.nextTurn());
     }
   }
 
@@ -465,7 +472,7 @@ export class GameScene extends Phaser.Scene {
     if (hadMindi) audio.captureMindi();
     else audio.winTrick();
 
-    this.time.delayedCall(450, () => {
+    this.time.delayedCall(380, () => {
       this.updateHud();
       this.busy = false;
       if (roundOver) this.showRoundOver();
@@ -497,12 +504,13 @@ export class GameScene extends Phaser.Scene {
 
     const lines: string[] = [];
     for (const s of result.sides) {
-      const bonus = s.trickBonus ? ' +1 hands' : '';
-      lines.push(`${sideName(s.id)} — ${s.points} pts  (${s.mindis} tens${bonus}, ${s.tricks} tricks)`);
+      const bonus = s.trickBonus ? '  +1 most hands' : '';
+      const pts = s.points === 1 ? '1 point' : `${s.points} points`;
+      lines.push(`${sideName(s.id)} — ${pts}  (${s.mindis} mindi${bonus})`);
     }
     lines.push('');
     const winNames = result.winners.map(sideName).join(', ');
-    if (result.whitewash) lines.push(`🏆 ${winNames} swept all the tens!`);
+    if (result.whitewash) lines.push(`🏆 ${winNames} swept all the mindis!`);
     else if (result.winners.length > 1) lines.push(`🤝 Tie — prize split: ${winNames}`);
     else lines.push(`🏆 Winner: ${winNames}`);
 

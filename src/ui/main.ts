@@ -9,8 +9,10 @@ const config: Phaser.Types.Core.GameConfig = {
   parent: 'game',
   backgroundColor: '#06231a',
   scale: {
+    // RESIZE fills the window 1:1 so pointer coordinates map exactly to what's
+    // drawn. (autoCenter is intentionally omitted — with RESIZE it can offset
+    // the canvas and make clicks land away from the cursor.)
     mode: Phaser.Scale.RESIZE,
-    autoCenter: Phaser.Scale.CENTER_BOTH,
     width: window.innerWidth,
     height: window.innerHeight
   },
