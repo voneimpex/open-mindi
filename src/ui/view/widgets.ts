@@ -59,6 +59,7 @@ export interface Slider extends Phaser.GameObjects.Container {
   getValue(): number;
   setValue(v: number): void;
   setRange(min: number, max: number, value: number): void;
+  setWidth(width: number): void;
 }
 
 /**
@@ -83,17 +84,18 @@ export function makeSlider(
   let lo = min;
   let hi = Math.max(min, max);
   let val = Phaser.Math.Clamp(value, lo, hi);
+  let trackW = width;
 
-  const half = width / 2;
-  const toX = (v: number) => (hi <= lo ? -half : -half + ((v - lo) / (hi - lo)) * width);
-  const fromX = (px: number) => (hi <= lo ? lo : Math.round(lo + ((px + half) / width) * (hi - lo)));
+  let half = trackW / 2;
+  const toX = (v: number) => (hi <= lo ? -half : -half + ((v - lo) / (hi - lo)) * trackW);
+  const fromX = (px: number) => (hi <= lo ? lo : Math.round(lo + ((px + half) / trackW) * (hi - lo)));
 
   const redraw = () => {
     track.clear();
-    track.fillStyle(0x0c2e22, 1);
-    track.lineStyle(2, 0xffffff, 0.2);
-    track.fillRoundedRect(-half, -6, width, 12, 6);
-    track.strokeRoundedRect(-half, -6, width, 12, 6);
+    track.fillStyle(0x081633, 1);
+    track.lineStyle(2, 0x4f8bff, 0.5);
+    track.fillRoundedRect(-half, -6, trackW, 12, 6);
+    track.strokeRoundedRect(-half, -6, trackW, 12, 6);
     const kx = toX(val);
     track.fillStyle(0x2bb673, 1);
     track.fillRoundedRect(-half, -6, kx + half, 12, 6);
@@ -118,6 +120,12 @@ export function makeSlider(
     lo = mn;
     hi = Math.max(mn, mx);
     val = Phaser.Math.Clamp(Math.round(v), lo, hi);
+    redraw();
+  };
+  c.setWidth = (nw: number) => {
+    trackW = nw;
+    half = trackW / 2;
+    (knob.input?.hitArea as Phaser.Geom.Circle | undefined)?.setTo(0, 0, 22);
     redraw();
   };
   return c;

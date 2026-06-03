@@ -4,7 +4,7 @@
   "description": "Collect the tens! A 2-6 player Mendikot-style trick-taking card game vs bots.",
   "start_url": "./",
   "display": "fullscreen",
-  "orientation": "any",
+  "orientation": "landscape",
   "background_color": "#06231a",
   "theme_color": "#0b3d2e",
   "icons": [

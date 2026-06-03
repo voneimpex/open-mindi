@@ -26,13 +26,51 @@
         width: 100vw;
         height: 100vh;
       }
-      #orient-hint {
+      /* Open Mindi is played in landscape — ask the player to rotate. */
+      #rotate {
         display: none;
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        background: linear-gradient(160deg, #16306a 0%, #070d24 100%);
+        color: #ffd24a;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        gap: 18px;
+        padding: 24px;
+      }
+      #rotate .icon {
+        font-size: 64px;
+        animation: rot 2s ease-in-out infinite;
+      }
+      #rotate .t {
+        font-size: 24px;
+        font-weight: 700;
+        letter-spacing: 0.5px;
+      }
+      #rotate .s {
+        font-size: 16px;
+        color: #bcd0ff;
+        font-weight: 600;
+      }
+      @keyframes rot {
+        0%, 40% { transform: rotate(0deg); }
+        60%, 100% { transform: rotate(-90deg); }
+      }
+      @media (orientation: portrait) {
+        #rotate { display: flex; }
       }
     </style>
   </head>
   <body>
     <div id="game"></div>
+    <div id="rotate">
+      <div class="icon">📱</div>
+      <div class="t">Please rotate your device</div>
+      <div class="s">Open Mindi is best played in landscape</div>
+    </div>
     <script type="module" src="/src/ui/main.ts"></script>
   </body>
 </html>
