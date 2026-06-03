@@ -4,7 +4,8 @@ import { AppSettings } from '../settings/Settings';
 import { cardBack, tableSkin } from '../skins/skins';
 import { CardView, CARD_H, CARD_W } from '../view/CardView';
 import { computeSeats, SeatSlot } from '../view/TableLayout';
-import { avatarDisc, drawBackground, drawPanel, fancyButton, FancyButton, goldText, THEME } from '../view/theme';
+import { avatarDisc, coverBackground, drawPanel, fancyButton, FancyButton, goldText, THEME } from '../view/theme';
+import { ART } from './BootScene';
 import {
   Card,
   GameEngine,
@@ -29,6 +30,7 @@ export class GameScene extends Phaser.Scene {
   private seats: SeatSlot[] = [];
 
   private bg!: Phaser.GameObjects.Graphics;
+  __bgImg?: Phaser.GameObjects.Image;
   private felt!: Phaser.GameObjects.Graphics;
   private headerPill!: Phaser.GameObjects.Graphics;
   private overlay!: Phaser.GameObjects.Graphics;
@@ -149,7 +151,8 @@ export class GameScene extends Phaser.Scene {
       const ring = Phaser.Display.Color.HexStringToColor(teamColor).color;
       const plate = this.add.graphics();
       const initial = player.isHuman ? 'Y' : player.name.slice(-1);
-      const avatar = avatarDisc(this, 0, 0, 16, initial, ring);
+      const avKey = player.isHuman ? ART.avatarYou : ART.avatarBot(seat);
+      const avatar = avatarDisc(this, 0, 0, 16, initial, ring, avKey);
       const name = this.add.text(0, 0, player.name, {
         fontFamily: 'system-ui, sans-serif',
         fontSize: '15px',
@@ -186,9 +189,13 @@ export class GameScene extends Phaser.Scene {
 
   // ---- layout ------------------------------------------------------------
 
-  /** Deep-blue surround + a felt oval table with a rail, using the table skin. */
+  /** Deep-blue surround + a felt oval table with a rail, using the table skin.
+   *  A custom `table-bg` image (if provided) replaces the whole drawing. */
   private drawTable(w: number, h: number): void {
-    drawBackground(this.bg, w, h);
+    if (coverBackground(this, this, this.bg, ART.tableBg, w, h)) {
+      this.felt.clear();
+      return;
+    }
     const skin = tableSkin(this.settings.table);
     const g = this.felt;
     g.clear();
@@ -542,6 +549,49 @@ export class GameScene extends Phaser.Scene {
 
   // ---- round over --------------------------------------------------------
 
+  /** Confetti rain + coins flying to the wallet on a win. */
+  private celebrate(whitewash: boolean): void {
+    audio.win();
+    const w = this.scale.width;
+    const h = this.scale.height;
+    const colors = [0xffd24a, 0x2bb673, 0x3f86ff, 0xff6a6a, 0xffffff, 0x9b5cff];
+    const n = whitewash ? 110 : 64;
+    for (let i = 0; i < n; i++) {
+      const x = Phaser.Math.Between(0, w);
+      const rect = this.add
+        .rectangle(x, -20, Phaser.Math.Between(6, 12), Phaser.Math.Between(8, 16), colors[i % colors.length])
+        .setDepth(980)
+        .setAngle(Phaser.Math.Between(0, 360));
+      this.tweens.add({
+        targets: rect,
+        y: h + 40,
+        x: x + Phaser.Math.Between(-90, 90),
+        angle: rect.angle + Phaser.Math.Between(180, 540),
+        duration: Phaser.Math.Between(1500, 2800),
+        delay: Phaser.Math.Between(0, 700),
+        ease: 'Cubic.easeIn',
+        onComplete: () => rect.destroy()
+      });
+    }
+    // coins fly from the centre toward the wallet (top-right corner)
+    for (let i = 0; i < 14; i++) {
+      const coin = this.add.circle(w / 2, h * 0.5, 11, 0xffd24a).setStrokeStyle(2, 0xe8a200).setDepth(985);
+      this.tweens.add({
+        targets: coin,
+        x: w - 170,
+        y: 30,
+        scale: 0.4,
+        duration: Phaser.Math.Between(550, 950),
+        delay: 350 + i * 60,
+        ease: 'Cubic.easeIn',
+        onComplete: () => {
+          coin.destroy();
+          audio.coin();
+        }
+      });
+    }
+  }
+
   private showRoundOver(): void {
     const w = this.scale.width;
     const h = this.scale.height;
@@ -554,6 +604,9 @@ export class GameScene extends Phaser.Scene {
     const settle = settleGame(result, this.bet, 0);
     let wallet = applyDelta(loadWallet(), settle.net);
     saveWallet(wallet);
+
+    if (settle.won) this.celebrate(result.whitewash);
+    else audio.lose();
 
     const cont = this.add.container(w / 2, h / 2).setDepth(950);
     const sideName = (id: number): string => {

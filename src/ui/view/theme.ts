@@ -264,24 +264,63 @@ export function setCoinBadge(c: Phaser.GameObjects.Container, amount: number): v
   (c.getData('amt') as Phaser.GameObjects.Text)?.setText(amount.toLocaleString());
 }
 
-/** An avatar disc with a coloured ring and an initial. */
+/** An avatar disc with a coloured ring. Shows the `${textureKey}_c` circular
+ *  image when it exists, otherwise an initial on a blue disc. */
 export function avatarDisc(
   scene: Phaser.Scene,
   x: number,
   y: number,
   radius: number,
   initial: string,
-  ringColor: number
+  ringColor: number,
+  textureKey?: string
 ): Phaser.GameObjects.Container {
   const c = scene.add.container(x, y);
   const g = scene.add.graphics();
   g.fillStyle(ringColor, 1);
   g.fillCircle(0, 0, radius + 3);
-  g.fillGradientStyle(0x35508f, 0x35508f, 0x142b55, 0x142b55, 1);
+  g.fillStyle(0x142b55, 1);
   g.fillCircle(0, 0, radius);
-  const t = scene.add
-    .text(0, 0, initial, { fontFamily: 'Georgia, serif', fontSize: `${radius}px`, color: '#dce8ff', fontStyle: 'bold' })
-    .setOrigin(0.5);
-  c.add([g, t]);
+  c.add(g);
+  const circKey = textureKey ? `${textureKey}_c` : undefined;
+  if (circKey && scene.textures.exists(circKey)) {
+    const img = scene.add.image(0, 0, circKey).setDisplaySize(radius * 2, radius * 2);
+    c.add(img);
+  } else {
+    const t = scene.add
+      .text(0, 0, initial, { fontFamily: 'Georgia, serif', fontSize: `${radius}px`, color: '#dce8ff', fontStyle: 'bold' })
+      .setOrigin(0.5);
+    c.add(t);
+  }
   return c;
+}
+
+/**
+ * Show a full-screen cover-fit background image when `key` exists, else draw
+ * the procedural gradient on `gfx`. Manages a single Image stored on the owner.
+ */
+export function coverBackground(
+  scene: Phaser.Scene,
+  owner: { __bgImg?: Phaser.GameObjects.Image },
+  gfx: Phaser.GameObjects.Graphics,
+  key: string,
+  w: number,
+  h: number
+): boolean {
+  if (scene.textures.exists(key)) {
+    const src = scene.textures.get(key).getSourceImage();
+    let img = owner.__bgImg;
+    if (!img) {
+      img = scene.add.image(0, 0, key).setOrigin(0.5);
+      img.setDepth(-100);
+      owner.__bgImg = img;
+    }
+    const scale = Math.max(w / src.width, h / src.height);
+    img.setTexture(key).setPosition(w / 2, h / 2).setScale(scale).setVisible(true);
+    gfx.clear();
+    return true;
+  }
+  owner.__bgImg?.setVisible(false);
+  drawBackground(gfx, w, h);
+  return false;
 }
