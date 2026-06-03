@@ -5,7 +5,7 @@ import { makeSlider, Slider } from '../view/widgets';
 import {
   avatarDisc,
   coinBadge,
-  drawBackground,
+  coverBackground,
   drawPanel,
   fancyButton,
   FancyButton,
@@ -13,6 +13,7 @@ import {
   setCoinBadge,
   THEME
 } from '../view/theme';
+import { ART } from './BootScene';
 import { GameMode, PlayerCount } from '../../engine';
 import { Difficulty } from '../../ai';
 import {
@@ -32,6 +33,7 @@ export class HomeScene extends Phaser.Scene {
   private wallet!: WalletState;
   private bet = 0;
   private bg!: Phaser.GameObjects.Graphics;
+  __bgImg?: Phaser.GameObjects.Image;
   private root!: Phaser.GameObjects.Container;
   private modeBtns: Record<GameMode, FancyButton> = {} as any;
   private playerBtns: Record<number, FancyButton> = {};
@@ -73,14 +75,15 @@ export class HomeScene extends Phaser.Scene {
     };
 
     // Top bar
-    named(avatarDisc(this, 0, 0, 22, 'P', 0xffd24a), 'avatar');
+    named(avatarDisc(this, 0, 0, 22, 'P', 0xffd24a, ART.avatarYou), 'avatar');
     this.coin = coinBadge(this, 0, 0, this.wallet.balance, { plus: () => this.scene.start('Settings') }) as any;
     named(this.coin, 'coin');
     this.bonusBtn = fancyButton(this, 0, 0, '', () => this.claimBonus(), { w: 170, h: 36, variant: 'gold2', size: 15 });
     named(this.bonusBtn, 'bonus');
 
-    // Title
+    // Title (custom logo image if provided, else gold text)
     named(goldText(this, 0, 0, 'OPEN MINDI', 60), 'title');
+    if (this.textures.exists(ART.logo)) named(this.add.image(0, 0, ART.logo).setOrigin(0.5), 'logo');
     named(
       this.add
         .text(0, 0, 'COLLECT THE MINDIS · PLAY VS BOTS', {
@@ -225,10 +228,25 @@ export class HomeScene extends Phaser.Scene {
     this.scene.start('Game', { ...this.settings, bet: clampBet(this.bet, this.wallet.balance) });
   }
 
+  private placeTitle(find: (n: string) => any, cx: number, titleY: number, subY: number, size: number): void {
+    const logo = find('logo');
+    const title = find('title');
+    const sub = find('subtitle');
+    if (logo) {
+      title.setVisible(false);
+      const src = this.textures.get(ART.logo).getSourceImage();
+      const sc = Math.min((size * 6) / src.width, (size * 2) / src.height);
+      logo.setVisible(true).setPosition(cx, titleY).setScale(sc);
+    } else {
+      title.setVisible(true).setFontSize(size).setPosition(cx, titleY);
+    }
+    sub.setPosition(cx, subY);
+  }
+
   private layout(): void {
     const w = this.scale.width;
     const h = this.scale.height;
-    drawBackground(this.bg, w, h);
+    coverBackground(this, this, this.bg, ART.homeBg, w, h);
     const cx = w / 2;
     const find = (n: string) => this.root.getByName(n) as any;
 
@@ -246,8 +264,7 @@ export class HomeScene extends Phaser.Scene {
     const titleSize = Phaser.Math.Clamp(Math.round(h / 11), 28, 56);
     const titleY = h * 0.1;
     const subY = titleY + titleSize * 0.62;
-    find('title').setFontSize(titleSize).setPosition(cx, titleY);
-    find('subtitle').setPosition(cx, subY);
+    this.placeTitle(find, cx, titleY, subY, titleSize);
 
     const cwid = Phaser.Math.Clamp(Math.min(w * 0.86, 940), 460, 940);
     const colL = cx - cwid / 4;
@@ -293,8 +310,7 @@ export class HomeScene extends Phaser.Scene {
   // Single column — only seen briefly before the "rotate" prompt; kept tidy.
   private layoutPortrait(w: number, h: number, cx: number, find: (n: string) => any): void {
     const titleSize = Phaser.Math.Clamp(Math.round(w / 11), 30, 56);
-    find('title').setFontSize(titleSize).setPosition(cx, h * 0.09);
-    find('subtitle').setPosition(cx, h * 0.09 + titleSize * 0.7);
+    this.placeTitle(find, cx, h * 0.09, h * 0.09 + titleSize * 0.7, titleSize);
 
     const cwid = Phaser.Math.Clamp(w * 0.92, 300, 520);
     const left = cx - cwid / 2 + 18;

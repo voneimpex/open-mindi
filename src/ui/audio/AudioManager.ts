@@ -187,6 +187,17 @@ export class AudioManager {
   button(): void {
     this.sfx(520, 'square', 0.05);
   }
+  coin(): void {
+    this.sfx(1320, 'square', 0.05);
+  }
+  win(): void {
+    const notes = [523, 659, 784, 1047];
+    notes.forEach((f, i) => window.setTimeout(() => this.sfx(f, 'sine', 0.18), i * 110));
+  }
+  lose(): void {
+    this.sfx(330, 'sine', 0.22);
+    window.setTimeout(() => this.sfx(247, 'sine', 0.32), 150);
+  }
 }
 
 export const audio = new AudioManager();
