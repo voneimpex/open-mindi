@@ -2,9 +2,9 @@ import Phaser from 'phaser';
 import { audio } from '../audio/AudioManager';
 import { AppSettings } from '../settings/Settings';
 import { cardBack, tableSkin } from '../skins/skins';
-import { drawTableBackground, makeButton } from '../view/widgets';
 import { CardView, CARD_H, CARD_W } from '../view/CardView';
 import { computeSeats, SeatSlot } from '../view/TableLayout';
+import { avatarDisc, drawBackground, drawPanel, fancyButton, FancyButton, goldText, THEME } from '../view/theme';
 import {
   Card,
   GameEngine,
@@ -29,6 +29,8 @@ export class GameScene extends Phaser.Scene {
   private seats: SeatSlot[] = [];
 
   private bg!: Phaser.GameObjects.Graphics;
+  private felt!: Phaser.GameObjects.Graphics;
+  private headerPill!: Phaser.GameObjects.Graphics;
   private overlay!: Phaser.GameObjects.Graphics;
 
   // view registries
@@ -39,6 +41,8 @@ export class GameScene extends Phaser.Scene {
   private legalViews: { view: CardView; pc: PlayableCard }[] = [];
   private trickViews = new Map<number, CardView>();
   private hud: {
+    plate: Phaser.GameObjects.Graphics;
+    avatar: Phaser.GameObjects.Container;
     name: Phaser.GameObjects.Text;
     stats: Phaser.GameObjects.Text;
     turn: Phaser.GameObjects.Graphics;
@@ -62,6 +66,8 @@ export class GameScene extends Phaser.Scene {
 
   create(): void {
     this.bg = this.add.graphics();
+    this.felt = this.add.graphics();
+    this.headerPill = this.add.graphics().setDepth(49);
     this.overlay = this.add.graphics().setDepth(900);
 
     this.startRound();
@@ -75,10 +81,10 @@ export class GameScene extends Phaser.Scene {
     this.statusText = this.add.text(0, 0, '', {
       fontFamily: 'system-ui, sans-serif',
       fontSize: '18px',
-      color: '#e9f5ef'
+      color: THEME.textDim
     }).setOrigin(0.5).setDepth(50);
 
-    const menuBtn = makeButton(this, 0, 0, '‹ Menu', () => this.scene.start('Home'), { w: 120, h: 40 });
+    const menuBtn = fancyButton(this, 0, 0, '‹ Menu', () => this.scene.start('Home'), { w: 116, h: 40, variant: 'primary', size: 16 });
     menuBtn.setDepth(60).setName('menu');
 
     this.input.on('pointerdown', this.onPointerDown, this);
@@ -138,32 +144,85 @@ export class GameScene extends Phaser.Scene {
         this.handViews = player.hand.map((c) => new CardView(this, c, back).setFaceUp(true));
       }
 
-      // HUD
-      const teamColor = this.engine.state.teams ? TEAM_COLORS[player.team] : '#ffffff';
+      // HUD nameplate: avatar disc + name + stats on a small panel.
+      const teamColor = this.engine.state.teams ? TEAM_COLORS[player.team] : (player.isHuman ? '#ffd24a' : '#7fd0ff');
+      const ring = Phaser.Display.Color.HexStringToColor(teamColor).color;
+      const plate = this.add.graphics();
+      const initial = player.isHuman ? 'Y' : player.name.slice(-1);
+      const avatar = avatarDisc(this, 0, 0, 16, initial, ring);
       const name = this.add.text(0, 0, player.name, {
         fontFamily: 'system-ui, sans-serif',
-        fontSize: '17px',
+        fontSize: '15px',
         color: teamColor,
         fontStyle: 'bold'
-      }).setOrigin(0.5);
+      }).setOrigin(0, 0.5);
       name.setData('baseColor', teamColor);
       const stats = this.add.text(0, 0, '', {
         fontFamily: 'system-ui, sans-serif',
-        fontSize: '15px',
+        fontSize: '13px',
         color: '#dceee6'
-      }).setOrigin(0.5);
+      }).setOrigin(0, 0.5);
       const turn = this.add.graphics();
-      this.hud[seat] = { name, stats, turn };
+      this.hud[seat] = { plate, avatar, name, stats, turn };
     }
     this.updateHud();
   }
 
+  /** Position a seat's nameplate (avatar + name + stats) centred at (x, y). */
+  private layoutPlate(seat: number, x: number, y: number): void {
+    const hud = this.hud[seat];
+    const pw = 156;
+    const ph = 40;
+    hud.plate.clear();
+    hud.plate.fillStyle(0x081024, 0.82);
+    hud.plate.lineStyle(2, THEME.panelBorder, 0.7);
+    hud.plate.fillRoundedRect(x - pw / 2, y - ph / 2, pw, ph, 12);
+    hud.plate.strokeRoundedRect(x - pw / 2, y - ph / 2, pw, ph, 12);
+    hud.plate.setDepth(38);
+    hud.avatar.setPosition(x - pw / 2 + 22, y).setDepth(40);
+    hud.name.setPosition(x - pw / 2 + 44, y - 9).setDepth(40);
+    hud.stats.setPosition(x - pw / 2 + 44, y + 9).setDepth(40);
+  }
+
   // ---- layout ------------------------------------------------------------
+
+  /** Deep-blue surround + a felt oval table with a rail, using the table skin. */
+  private drawTable(w: number, h: number): void {
+    drawBackground(this.bg, w, h);
+    const skin = tableSkin(this.settings.table);
+    const g = this.felt;
+    g.clear();
+    const cx = w / 2;
+    const cy = h * 0.5;
+    const rx = Math.min(w * 0.47, 900);
+    const ry = Math.min(h * 0.46, 560);
+    // wooden / dark rail
+    g.fillStyle(skin.rail, 1);
+    g.fillEllipse(cx, cy, rx * 2 + 26, ry * 2 + 26);
+    g.lineStyle(3, 0x000000, 0.35);
+    g.strokeEllipse(cx, cy, rx * 2 + 26, ry * 2 + 26);
+    // felt with a soft radial gradient (concentric ellipses)
+    const steps = 14;
+    for (let i = steps; i >= 0; i--) {
+      const t = i / steps;
+      const col = Phaser.Display.Color.Interpolate.ColorWithColor(
+        Phaser.Display.Color.ValueToColor(skin.feltEdge),
+        Phaser.Display.Color.ValueToColor(skin.feltCenter),
+        steps,
+        i
+      );
+      g.fillStyle(Phaser.Display.Color.GetColor(col.r, col.g, col.b), 1);
+      g.fillEllipse(cx, cy, rx * 2 * t + rx * 0.12, ry * 2 * t + ry * 0.12);
+    }
+    // inner highlight ring
+    g.lineStyle(2, 0xffffff, 0.08);
+    g.strokeEllipse(cx, cy, rx * 1.7, ry * 1.7);
+  }
 
   private layout(): void {
     const w = this.scale.width;
     const h = this.scale.height;
-    drawTableBackground(this, this.bg, tableSkin(this.settings.table), w, h);
+    this.drawTable(w, h);
 
     const players = this.engine.state.players;
     this.seats = computeSeats(w, h, players);
@@ -179,22 +238,29 @@ export class GameScene extends Phaser.Scene {
 
     const cx = w / 2;
 
-    const headFont = Phaser.Math.Clamp(Math.round(w / 24), 15, 26);
-    const statFont = Phaser.Math.Clamp(Math.round(w / 36), 12, 18);
+    const headFont = Phaser.Math.Clamp(Math.round(w / 26), 15, 24);
+    const statFont = Phaser.Math.Clamp(Math.round(w / 40), 12, 17);
     let headerBottom = 56;
     if (this.trumpText) {
       const tr = this.engine.state.trump;
       this.trumpText
         .setFontSize(headFont)
-        .setText(`Trump  ${SUIT_SYMBOL[tr]} ${SUIT_NAME[tr]}`)
+        .setText(`TRUMP  ${SUIT_SYMBOL[tr]} ${SUIT_NAME[tr]}`)
         .setOrigin(0.5, 0)
-        .setPosition(cx, 6)
+        .setPosition(cx, 8)
         .setDepth(60);
-      this.trumpText.setColor(tr === 'H' || tr === 'D' ? '#ff8a8a' : '#ffffff');
-      this.statusText.setFontSize(statFont).setOrigin(0.5, 0).setPosition(cx, 8 + headFont + 2).setDepth(60);
-      headerBottom = 8 + headFont + 2 + statFont + 8;
+      this.trumpText.setColor(tr === 'H' || tr === 'D' ? '#ff9a9a' : '#ffffff');
+      this.statusText.setFontSize(statFont).setOrigin(0.5, 0).setPosition(cx, 10 + headFont + 2).setDepth(60);
+      headerBottom = 10 + headFont + 2 + statFont + 10;
+      // header pill behind the trump text
+      const pw = Math.max(this.trumpText.width, this.statusText.width) + 44;
+      this.headerPill.clear();
+      this.headerPill.fillStyle(0x081024, 0.8);
+      this.headerPill.lineStyle(2, THEME.panelBorder, 0.7);
+      this.headerPill.fillRoundedRect(cx - pw / 2, 2, pw, headerBottom - 4, 14);
+      this.headerPill.strokeRoundedRect(cx - pw / 2, 2, pw, headerBottom - 4, 14);
     }
-    (this.children.getByName('menu') as Phaser.GameObjects.Container)?.setPosition(64, 26);
+    (this.children.getByName('menu') as FancyButton)?.setPosition(70, 28);
 
     const back = cardBack(this.settings.cardBack);
     const pileGap = cw + Math.max(4, 6 * cs);
@@ -222,7 +288,7 @@ export class GameScene extends Phaser.Scene {
 
       // Keep the pile row on screen and below the header (label sits above it).
       pileCX = Phaser.Math.Clamp(pileCX, rowW / 2 + cw / 2 + 4, w - rowW / 2 - cw / 2 - 4);
-      const minPileCY = headerBottom + 38 + ch / 2; // room for the 2-line label
+      const minPileCY = headerBottom + 60 + ch / 2; // room for the nameplate above the pile
       pileCY = Phaser.Math.Clamp(pileCY, minPileCY, h - ch / 2 - 4);
 
       piles.forEach((view, pi) => {
@@ -248,15 +314,9 @@ export class GameScene extends Phaser.Scene {
         }
       });
 
-      // HUD: human in the bottom-left corner, bots above their pile row.
-      const hud = this.hud[seat];
-      if (isHuman) {
-        hud.name.setOrigin(0, 0.5).setPosition(14, h - 44).setDepth(40);
-        hud.stats.setOrigin(0, 0.5).setPosition(14, h - 24).setDepth(40);
-      } else {
-        hud.name.setOrigin(0.5, 0.5).setPosition(slot.x, pileCY - ch / 2 - 22).setDepth(40);
-        hud.stats.setOrigin(0.5, 0.5).setPosition(slot.x, pileCY - ch / 2 - 6).setDepth(40);
-      }
+      // Nameplate: human bottom-left, bots above their pile row.
+      if (isHuman) this.layoutPlate(seat, 92, h - 30);
+      else this.layoutPlate(seat, slot.x, pileCY - ch / 2 - 26);
     }
 
     // Trick cards cluster around the center.
@@ -514,37 +574,42 @@ export class GameScene extends Phaser.Scene {
     else if (result.winners.length > 1) lines.push(`🤝 Tie — prize split: ${winNames}`);
     else lines.push(`🏆 Winner: ${winNames}`);
 
-    const title = this.add.text(0, -h * 0.26, 'Round Over', {
-      fontFamily: 'Georgia, serif', fontSize: '42px', color: '#ffd24a', fontStyle: 'bold'
-    }).setOrigin(0.5);
-    const body = this.add.text(0, -h * 0.08, lines.join('\n'), {
-      fontFamily: 'system-ui, sans-serif', fontSize: '20px', color: '#ffffff', align: 'center', lineSpacing: 8
+    const panelW = Phaser.Math.Clamp(Math.min(w * 0.8, 760), 380, 760);
+    const panelH = Phaser.Math.Clamp(Math.min(h * 0.86, 470), 300, 470);
+    const pg = this.add.graphics();
+    drawPanel(pg, panelW, panelH, { radius: 22, glow: true });
+    cont.add(pg);
+
+    const title = goldText(this, 0, -panelH / 2 + 40, 'ROUND OVER', 38);
+    const body = this.add.text(0, -panelH * 0.08, lines.join('\n'), {
+      fontFamily: 'system-ui, sans-serif', fontSize: '19px', color: '#ffffff', align: 'center', lineSpacing: 7
     }).setOrigin(0.5);
     cont.add([title, body]);
 
     // Coins outcome
     const fmt = (n: number) => n.toLocaleString();
     const outcome = settle.won
-      ? `${settle.shared ? 'Shared win' : 'You won'}  +${fmt(settle.payout - this.bet)} coins`
-      : `You lost  −${fmt(this.bet)} coins`;
-    const coinLine = `Bet ${fmt(this.bet)} • Prize fund ${fmt(settle.pot)}`;
-    const coins = this.add.text(0, h * 0.16, `${coinLine}\n${outcome}\n💰 Balance: ${fmt(wallet.balance)}`, {
+      ? `${settle.shared ? 'Shared win' : 'You won'}  +${fmt(settle.payout - this.bet)}`
+      : `You lost  −${fmt(this.bet)}`;
+    const coins = this.add.text(0, panelH * 0.2, `Bet ${fmt(this.bet)}  ·  Prize fund ${fmt(settle.pot)}\n${outcome} coins   💰 ${fmt(wallet.balance)}`, {
       fontFamily: 'system-ui, sans-serif',
-      fontSize: '22px',
+      fontSize: '19px',
       color: settle.won ? '#9cf2cf' : '#ff9a9a',
       align: 'center',
-      lineSpacing: 6,
+      lineSpacing: 5,
       fontStyle: 'bold'
     }).setOrigin(0.5);
     cont.add(coins);
 
-    const again = makeButton(this, -130, h * 0.34, 'Play Again', () => {
+    const again = fancyButton(this, -120, panelH / 2 - 46, '▶ Play Again', () => {
       cont.destroy();
       this.overlay.clear();
       const bet = Math.min(this.bet, loadWallet().balance);
       this.scene.restart({ ...this.settings, bet });
-    }, { w: 220, h: 60, active: true });
-    const menu = makeButton(this, 130, h * 0.34, 'Main Menu', () => this.scene.start('Home'), { w: 220, h: 60 });
+    }, { w: 210, h: 58, variant: 'green', size: 20, selected: true });
+    const menu = fancyButton(this, 120, panelH / 2 - 46, 'Main Menu', () => this.scene.start('Home'), {
+      w: 210, h: 58, variant: 'primary', size: 20
+    });
     cont.add([again, menu]);
   }
 }
