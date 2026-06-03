@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { audio } from '../audio/AudioManager';
 import { loadSettings } from '../settings/Settings';
+import { assetUrl } from '../view/assets';
 import { allFaces, CARD_BACK_ART_KEY } from '../view/cardTextures';
 
 /** Optional art keys. Drop matching files in /public and they appear
@@ -22,11 +23,10 @@ export class BootScene extends Phaser.Scene {
   preload(): void {
     this.load.on('loaderror', () => {}); // missing optional art is fine
 
-    // Public-domain card art (see public/cards/CREDITS.md).
-    this.load.setPath('cards');
-    for (const f of allFaces()) this.load.image(f.key, f.file);
-    this.load.image(CARD_BACK_ART_KEY, 'back.png');
-    this.load.setPath();
+    // Public-domain card art (see public/cards/CREDITS.md). The single-file
+    // download build inlines these as data URIs via assetUrl().
+    for (const f of allFaces()) this.load.image(f.key, assetUrl(f.file, `cards/${f.file}`));
+    this.load.image(CARD_BACK_ART_KEY, assetUrl('back.png', 'cards/back.png'));
 
     // Optional custom art — backgrounds, logo and avatars.
     this.load.image(ART.homeBg, 'ui/home-bg.png');
@@ -46,8 +46,8 @@ export class BootScene extends Phaser.Scene {
 
     // Bundled CC0 music (see public/audio/CREDITS.md), loaded in the background.
     const baseUrl = import.meta.env.BASE_URL;
-    audio.loadTrack('home', `${baseUrl}audio/home.mp3`).catch(() => {});
-    audio.loadTrack('game', `${baseUrl}audio/game.mp3`).catch(() => {});
+    audio.loadTrack('home', assetUrl('audio/home.mp3', `${baseUrl}audio/home.mp3`)).catch(() => {});
+    audio.loadTrack('game', assetUrl('audio/game.mp3', `${baseUrl}audio/game.mp3`)).catch(() => {});
 
     this.scene.start('Home');
   }
