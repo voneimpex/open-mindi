@@ -23,3 +23,11 @@ const config: Phaser.Types.Core.GameConfig = {
 
 // eslint-disable-next-line no-new
 new Phaser.Game(config);
+
+// Register the service worker so the game is installable and works offline.
+// (No-op on file:// or unsupported browsers — e.g. the single-file build.)
+if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`).catch(() => {});
+  });
+}

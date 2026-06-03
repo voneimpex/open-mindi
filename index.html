@@ -8,7 +8,43 @@
     />
     <meta name="theme-color" content="#0b3d2e" />
     <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" type="image/png" href="./favicon.png" />
+    <link rel="apple-touch-icon" href="./icon-192.png" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Open Mindi</title>
+    <script>
+      // Capture the install prompt so an in-game button can trigger it. The
+      // Phaser UI reads these globals to show an "Install App" button.
+      window.__deferredPrompt = null;
+      window.__canInstall = false;
+      window.__isStandalone =
+        window.matchMedia('(display-mode: standalone)').matches ||
+        window.matchMedia('(display-mode: fullscreen)').matches ||
+        window.navigator.standalone === true;
+      window.addEventListener('beforeinstallprompt', function (e) {
+        e.preventDefault();
+        window.__deferredPrompt = e;
+        window.__canInstall = true;
+        window.dispatchEvent(new Event('mindi-installable'));
+      });
+      window.addEventListener('appinstalled', function () {
+        window.__canInstall = false;
+        window.__deferredPrompt = null;
+        window.dispatchEvent(new Event('mindi-installable'));
+      });
+      window.installApp = async function () {
+        var p = window.__deferredPrompt;
+        if (!p) return false;
+        p.prompt();
+        try { await p.userChoice; } catch (e) {}
+        window.__deferredPrompt = null;
+        window.__canInstall = false;
+        window.dispatchEvent(new Event('mindi-installable'));
+        return true;
+      };
+    </script>
     <style>
       html,
       body {

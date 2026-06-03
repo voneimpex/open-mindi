@@ -3,7 +3,6 @@ import { audio } from '../audio/AudioManager';
 import { AppSettings } from '../settings/Settings';
 import { cardBack, tableSkin } from '../skins/skins';
 import { CardView, CARD_H, CARD_W } from '../view/CardView';
-import { computeSeats, SeatSlot } from '../view/TableLayout';
 import { avatarDisc, coverBackground, drawPanel, fancyButton, FancyButton, goldText, THEME } from '../view/theme';
 import { ART } from './BootScene';
 import {
@@ -27,7 +26,9 @@ export class GameScene extends Phaser.Scene {
   private settings!: AppSettings;
   private engine!: GameEngine;
   private bots: (Bot | null)[] = [];
-  private seats: SeatSlot[] = [];
+  /** Per-seat anchor for the pile/hand row and where its card lands in the trick. */
+  private seatPos: { x: number; y: number }[] = [];
+  private trickPos: { x: number; y: number }[] = [];
 
   private bg!: Phaser.GameObjects.Graphics;
   __bgImg?: Phaser.GameObjects.Image;
@@ -172,19 +173,48 @@ export class GameScene extends Phaser.Scene {
   }
 
   /** Position a seat's nameplate (avatar + name + stats) centred at (x, y). */
-  private layoutPlate(seat: number, x: number, y: number): void {
+  private layoutPlate(seat: number, x: number, y: number, pw = 152, ph = 38): void {
     const hud = this.hud[seat];
-    const pw = 156;
-    const ph = 40;
     hud.plate.clear();
     hud.plate.fillStyle(0x081024, 0.82);
     hud.plate.lineStyle(2, THEME.panelBorder, 0.7);
-    hud.plate.fillRoundedRect(x - pw / 2, y - ph / 2, pw, ph, 12);
-    hud.plate.strokeRoundedRect(x - pw / 2, y - ph / 2, pw, ph, 12);
+    hud.plate.fillRoundedRect(x - pw / 2, y - ph / 2, pw, ph, 10);
+    hud.plate.strokeRoundedRect(x - pw / 2, y - ph / 2, pw, ph, 10);
     hud.plate.setDepth(38);
-    hud.avatar.setPosition(x - pw / 2 + 22, y).setDepth(40);
-    hud.name.setPosition(x - pw / 2 + 44, y - 9).setDepth(40);
-    hud.stats.setPosition(x - pw / 2 + 44, y + 9).setDepth(40);
+    const r = Phaser.Math.Clamp(ph / 2 - 5, 9, 15);
+    const textX = x - pw / 2 + r * 2 + 12;
+    hud.avatar.setPosition(x - pw / 2 + r + 7, y).setScale(r / 16).setDepth(40);
+    hud.name.setPosition(textX, y - ph * 0.22).setFontSize(Math.max(11, Math.round(ph * 0.34))).setDepth(40);
+    hud.stats.setPosition(textX, y + ph * 0.26).setFontSize(Math.max(10, Math.round(ph * 0.28))).setDepth(40);
+  }
+
+  /** Draw one seat's pile row (face-up tops + face-down stack + depth badge). */
+  private renderPileRow(seat: number, centerX: number, centerY: number, pileGap: number, cw: number, ch: number, cs: number): void {
+    const back = cardBack(this.settings.cardBack);
+    const piles = this.pileTops[seat];
+    const rowW = (piles.length - 1) * pileGap;
+    piles.forEach((view, pi) => {
+      const px = centerX - rowW / 2 + pi * pileGap;
+      const py = centerY;
+      const depth = this.engine.pileDepth(seat, pi);
+      const stack = this.pileStacks[seat][pi];
+      stack.clear();
+      for (let d = Math.min(depth, 3); d > 0; d--) {
+        stack.fillStyle(back.color, 0.9);
+        stack.lineStyle(1, 0x000000, 0.3);
+        const ox = px + d * 1.5;
+        const oy = py - d * 1.5;
+        stack.fillRoundedRect(ox - cw / 2, oy - ch / 2, cw, ch, 6);
+        stack.strokeRoundedRect(ox - cw / 2, oy - ch / 2, cw, ch, 6);
+      }
+      if (view) view.setScale(cs).setPosition(px, py).setDepth(10);
+      const badge = this.pileBadges[seat][pi];
+      if (depth > 0) {
+        badge.setText(`${depth}`).setFontSize(Math.max(10, Math.round(16 * cs))).setPosition(px - cw / 2 + 3, py - ch / 2 + 3).setVisible(true).setDepth(22);
+      } else {
+        badge.setVisible(false);
+      }
+    });
   }
 
   // ---- layout ------------------------------------------------------------
@@ -226,112 +256,119 @@ export class GameScene extends Phaser.Scene {
     g.strokeEllipse(cx, cy, rx * 1.7, ry * 1.7);
   }
 
+  /**
+   * Proportional, height-aware layout. The table is split into three vertical
+   * bands — bots (top), the trick (middle), and the human's cards (bottom) —
+   * and the card scale is chosen to fit BOTH the width (bot pile rows) and the
+   * height (three bands). This keeps everything on screen and non-overlapping
+   * on short, wide phone-in-landscape screens as well as tall desktops.
+   */
   private layout(): void {
     const w = this.scale.width;
     const h = this.scale.height;
     this.drawTable(w, h);
 
     const players = this.engine.state.players;
-    this.seats = computeSeats(w, h, players);
-
-    // Scale so the bots' pile rows fit across the top arc.
     const k = Math.max(1, players - 1);
     const lay = this.engine.state.layout;
-    const scaleW = (w * 0.96) / (k * lay.piles * CARD_W * 1.18);
-    const cs = Phaser.Math.Clamp(Math.min(scaleW, 0.72), 0.3, 0.72);
-    this.cardScale = cs;
-    const cw = CARD_W * cs;
-    const ch = CARD_H * cs;
-
     const cx = w / 2;
 
-    const headFont = Phaser.Math.Clamp(Math.round(w / 26), 15, 24);
-    const statFont = Phaser.Math.Clamp(Math.round(w / 40), 12, 17);
-    let headerBottom = 56;
+    // ---- header (compact pill, top-centre) ----
+    const headFont = Phaser.Math.Clamp(Math.round(h / 15), 13, 24);
+    const statFont = Phaser.Math.Clamp(Math.round(h / 24), 10, 16);
+    const headerH = Phaser.Math.Clamp(Math.round(h * 0.14), 32, 56);
     if (this.trumpText) {
       const tr = this.engine.state.trump;
       this.trumpText
         .setFontSize(headFont)
         .setText(`TRUMP  ${SUIT_SYMBOL[tr]} ${SUIT_NAME[tr]}`)
         .setOrigin(0.5, 0)
-        .setPosition(cx, 8)
-        .setDepth(60);
-      this.trumpText.setColor(tr === 'H' || tr === 'D' ? '#ff9a9a' : '#ffffff');
-      this.statusText.setFontSize(statFont).setOrigin(0.5, 0).setPosition(cx, 10 + headFont + 2).setDepth(60);
-      headerBottom = 10 + headFont + 2 + statFont + 10;
-      // header pill behind the trump text
-      const pw = Math.max(this.trumpText.width, this.statusText.width) + 44;
+        .setPosition(cx, 5)
+        .setDepth(60)
+        .setColor(tr === 'H' || tr === 'D' ? '#ff9a9a' : '#ffffff');
+      this.statusText.setFontSize(statFont).setOrigin(0.5, 0).setPosition(cx, 7 + headFont).setDepth(60);
+      const pw = Math.max(this.trumpText.width, this.statusText.width) + 40;
       this.headerPill.clear();
-      this.headerPill.fillStyle(0x081024, 0.8);
+      this.headerPill.fillStyle(0x081024, 0.82);
       this.headerPill.lineStyle(2, THEME.panelBorder, 0.7);
-      this.headerPill.fillRoundedRect(cx - pw / 2, 2, pw, headerBottom - 4, 14);
-      this.headerPill.strokeRoundedRect(cx - pw / 2, 2, pw, headerBottom - 4, 14);
+      this.headerPill.fillRoundedRect(cx - pw / 2, 2, pw, headerH - 2, 12);
+      this.headerPill.strokeRoundedRect(cx - pw / 2, 2, pw, headerH - 2, 12);
     }
-    (this.children.getByName('menu') as FancyButton)?.setPosition(70, 28);
+    const menuBtn = this.children.getByName('menu') as FancyButton | null;
+    menuBtn?.setSize2(Phaser.Math.Clamp(Math.round(w * 0.12), 84, 116), Math.min(36, headerH - 4));
+    menuBtn?.setPosition(8 + (menuBtn.width ?? 100) / 2, headerH / 2 + 1);
 
-    const back = cardBack(this.settings.cardBack);
-    const pileGap = cw + Math.max(4, 6 * cs);
+    // ---- card scale: fit width (bot rows) AND height (three bands) ----
+    const npH = Phaser.Math.Clamp(Math.round(h * 0.1), 20, 34); // nameplate height
+    const top = headerH + npH + 8; // first card band top edge
+    const bottomPad = 6;
+    const avail = h - top - bottomPad;
+    const csH = ((avail / 3) / CARD_H) * 0.94;
+    const csW = (w * 0.95) / (k * lay.piles * CARD_W * 1.16);
+    const cs = Phaser.Math.Clamp(Math.min(csW, csH, 0.74), 0.3, 0.74);
+    this.cardScale = cs;
+    const cw = CARD_W * cs;
+    const ch = CARD_H * cs;
+    const pileGap = cw + Math.max(4, 8 * cs);
 
+    // ---- three band centres ----
+    const botY = top + ch / 2;
+    const handBandY = h - bottomPad - ch / 2;
+    const trickY = (botY + handBandY) / 2;
+
+    // ---- seat anchors + trick targets ----
+    this.seatPos = [];
+    this.trickPos = [];
+    this.seatPos[0] = { x: cx, y: handBandY };
+    for (let j = 0; j < k; j++) this.seatPos[j + 1] = { x: (w / (k + 1)) * (j + 1), y: botY };
+    // Trick cards spread toward each player around the centre, but the vertical
+    // spread is clamped so a card never creeps into the bot or hand bands on a
+    // short screen (then it becomes a near-horizontal fan instead).
+    const maxYoff = Phaser.Math.Clamp((handBandY - botY) / 2 - ch / 2 - 6, 0, ch * 0.5);
     for (let seat = 0; seat < players; seat++) {
-      const slot = this.seats[seat];
-      const isHuman = seat === 0;
-      const piles = this.pileTops[seat];
-      const rowW = (piles.length - 1) * pileGap;
-
-      let pileCX = slot.x;
-      let pileCY = slot.y;
-
-      if (isHuman) {
-        const handY = h - ch * 0.6 - 8;
-        pileCY = handY - ch - 14; // piles sit just above the hand
-        pileCX = cx;
-        const n = Math.max(1, this.handViews.length);
-        const hgap = Math.min(cw * 0.94, (w * 0.94) / n);
-        const totalW = (this.handViews.length - 1) * hgap;
-        this.handViews.forEach((v, i) =>
-          v.setScale(cs).setPosition(cx - totalW / 2 + i * hgap, handY).setDepth(30 + i)
-        );
-      }
-
-      // Keep the pile row on screen and below the header (label sits above it).
-      pileCX = Phaser.Math.Clamp(pileCX, rowW / 2 + cw / 2 + 4, w - rowW / 2 - cw / 2 - 4);
-      const minPileCY = headerBottom + 60 + ch / 2; // room for the nameplate above the pile
-      pileCY = Phaser.Math.Clamp(pileCY, minPileCY, h - ch / 2 - 4);
-
-      piles.forEach((view, pi) => {
-        const px = pileCX - rowW / 2 + pi * pileGap;
-        const py = pileCY;
-        const depth = this.engine.pileDepth(seat, pi);
-        const stack = this.pileStacks[seat][pi];
-        stack.clear();
-        for (let d = Math.min(depth, 3); d > 0; d--) {
-          stack.fillStyle(back.color, 0.9);
-          stack.lineStyle(1, 0x000000, 0.3);
-          const ox = px + d * 1.5;
-          const oy = py - d * 1.5;
-          stack.fillRoundedRect(ox - cw / 2, oy - ch / 2, cw, ch, 6);
-          stack.strokeRoundedRect(ox - cw / 2, oy - ch / 2, cw, ch, 6);
-        }
-        if (view) view.setScale(cs).setPosition(px, py).setDepth(10);
-        const badge = this.pileBadges[seat][pi];
-        if (depth > 0) {
-          badge.setText(`${depth}`).setPosition(px - cw / 2 + 3, py - ch / 2 + 3).setVisible(true).setDepth(22);
-        } else {
-          badge.setVisible(false);
-        }
-      });
-
-      // Nameplate: human bottom-left, bots above their pile row.
-      if (isHuman) this.layoutPlate(seat, 92, h - 30);
-      else this.layoutPlate(seat, slot.x, pileCY - ch / 2 - 26);
+      const sp = this.seatPos[seat];
+      const dx = sp.x - cx;
+      const dy = sp.y - trickY;
+      const len = Math.hypot(dx, dy) || 1;
+      this.trickPos[seat] = {
+        x: cx + (dx / len) * cw * 0.62,
+        y: trickY + Phaser.Math.Clamp((dy / len) * ch * 0.5, -maxYoff, maxYoff)
+      };
     }
 
-    // Trick cards cluster around the center.
+    // ---- bots: pile row + compact nameplate above ----
+    const rowW = (lay.piles - 1) * pileGap;
+    const npW = Phaser.Math.Clamp(rowW + cw, 116, 200);
+    for (let seat = 1; seat < players; seat++) {
+      const pileCX = Phaser.Math.Clamp(this.seatPos[seat].x, rowW / 2 + cw / 2 + 4, w - rowW / 2 - cw / 2 - 4);
+      this.renderPileRow(seat, pileCX, botY, pileGap, cw, ch, cs);
+      this.layoutPlate(seat, pileCX, botY - ch / 2 - npH / 2 - 3, npW, npH);
+    }
+
+    // ---- human: pile-tops and hand share the bottom band ----
+    const hpiles = this.pileTops[0];
+    const pileRowW = (hpiles.length - 1) * pileGap;
+    const handN = Math.max(1, this.handViews.length);
+    const sep = cw * 0.85;
+    let handGap = Math.min(cw * 0.82, cw + 4);
+    const groupW = (g: number) => pileRowW + cw + sep + (handN - 1) * g + cw;
+    if (groupW(handGap) > w - 12) {
+      handGap = Math.max(cw * 0.32, (w - 12 - pileRowW - 2 * cw - sep) / Math.max(1, handN - 1));
+    }
+    const leftX = Math.max(cw / 2 + 6, cx - groupW(handGap) / 2);
+    const pileRowCenter = leftX + cw / 2 + pileRowW / 2;
+    this.renderPileRow(0, pileRowCenter, handBandY, pileGap, cw, ch, cs);
+    const firstHandX = leftX + pileRowW + cw + sep + cw / 2;
+    this.handViews.forEach((v, i) => v.setScale(cs).setPosition(firstHandX + i * handGap, handBandY).setDepth(30 + i));
+    // your nameplate sits in the empty left margin just above the bottom band
+    this.layoutPlate(0, 8 + npW / 2, handBandY - ch / 2 - npH / 2 - 4, npW, npH);
+
+    // ---- trick cards already on the table ----
     for (const [uid, view] of this.trickViews) {
       const seat = this.findTrickSeat(uid);
       if (seat != null) {
-        const slot = this.seats[seat];
-        view.setScale(cs).setPosition(slot.trickX, slot.trickY).setDepth(100);
+        const tp = this.trickPos[seat];
+        view.setScale(cs).setPosition(tp.x, tp.y).setDepth(100);
       }
     }
     this.updateHud();
@@ -457,7 +494,8 @@ export class GameScene extends Phaser.Scene {
     }
     this.busy = true;
     const seat = move.seat;
-    const slot = this.seats[seat];
+    const sp = this.seatPos[seat];
+    const tp = this.trickPos[seat];
 
     // Resolve the moving CardView (before engine mutates piles/hands).
     let view: CardView;
@@ -468,9 +506,9 @@ export class GameScene extends Phaser.Scene {
       const idx = this.handViews.findIndex((v) => v.card?.uid === move.card.uid);
       view = this.handViews.splice(idx, 1)[0];
     } else {
-      // bot hand card: spawn a face-down card at the bot's hand position
+      // bot hand card: spawn a face-down card at the bot's seat position
       view = new CardView(this, move.card, cardBack(this.settings.cardBack)).setFaceUp(false);
-      view.setScale(this.cardScale * 0.62).setPosition(slot.x, slot.y);
+      view.setScale(this.cardScale * 0.62).setPosition(sp.x, sp.y);
     }
 
     const result = this.engine.play(move);
@@ -478,11 +516,11 @@ export class GameScene extends Phaser.Scene {
     this.trickViews.set(move.card.uid, view);
     audio.playCard();
 
-    // animate to trick slot, flipping bot cards face up
+    // animate to the trick slot, flipping bot cards face up
     this.tweens.add({
       targets: view,
-      x: slot.trickX,
-      y: slot.trickY,
+      x: tp.x,
+      y: tp.y,
       scale: this.cardScale,
       duration: 260,
       ease: 'Cubic.easeOut'
@@ -517,7 +555,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private resolveTrick(winnerSeat: number, roundOver: boolean): void {
-    const slot = this.seats[winnerSeat];
+    const sp = this.seatPos[winnerSeat] ?? { x: this.scale.width / 2, y: this.scale.height / 2 };
     const hadMindi = [...this.trickViews.values()].some((v) => v.card && isMindi(v.card));
     const cards = [...this.trickViews.values()];
     this.trickViews.clear();
@@ -525,8 +563,8 @@ export class GameScene extends Phaser.Scene {
     cards.forEach((v, i) => {
       this.tweens.add({
         targets: v,
-        x: slot.x,
-        y: slot.y,
+        x: sp.x,
+        y: sp.y,
         scale: this.cardScale * 0.4,
         alpha: 0.0,
         duration: 380,
