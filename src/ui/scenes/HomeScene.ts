@@ -56,6 +56,8 @@ export class HomeScene extends Phaser.Scene {
     this.build();
     this.scale.on('resize', this.layout, this);
     this.layout();
+    window.addEventListener('mindi-installable', this.onInstallable);
+    this.updateInstall();
 
     audio.playMusic('home');
     this.input.once('pointerdown', () => audio.unlock());
@@ -63,6 +65,29 @@ export class HomeScene extends Phaser.Scene {
 
   shutdown(): void {
     this.scale.off('resize', this.layout, this);
+    window.removeEventListener('mindi-installable', this.onInstallable);
+  }
+
+  private onInstallable = (): void => this.updateInstall();
+
+  /** Show the install button only when the browser can install (or on iOS). */
+  private updateInstall(): void {
+    const win = window as any;
+    const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent);
+    const show = !win.__isStandalone && (win.__canInstall || isIOS);
+    (this.root.getByName('install') as FancyButton | null)?.setVisible(show);
+  }
+
+  private doInstall(): void {
+    const win = window as any;
+    if (win.__deferredPrompt && win.installApp) {
+      win.installApp();
+    } else {
+      const t = this.root.getByName('installHint') as Phaser.GameObjects.Text | null;
+      if (!t) return;
+      t.setText('On iPhone: tap  Share  →  “Add to Home Screen”').setVisible(true).setAlpha(1);
+      this.tweens.add({ targets: t, alpha: 0, delay: 3500, duration: 800, onComplete: () => t.setVisible(false) });
+    }
   }
 
   private build(): void {
@@ -161,6 +186,14 @@ export class HomeScene extends Phaser.Scene {
     // Actions
     named(fancyButton(this, 0, 0, '▶  PLAY', () => this.startGame(), { w: 300, h: 70, variant: 'green', size: 28, selected: true }), 'play');
     named(fancyButton(this, 0, 0, '⚙  Skins & Audio', () => this.scene.start('Settings'), { w: 300, h: 46, variant: 'primary', size: 18 }), 'settings');
+    named(fancyButton(this, 0, 0, '⤓  Install App', () => this.doInstall(), { w: 200, h: 44, variant: 'gold2', size: 17 }), 'install');
+    named(
+      this.add
+        .text(0, 0, '', { fontFamily: 'system-ui, sans-serif', fontSize: '14px', color: '#ffe9a8', fontStyle: 'bold' })
+        .setOrigin(0.5)
+        .setVisible(false),
+      'installHint'
+    );
 
     this.refreshWallet();
     this.updateBetText();
@@ -250,61 +283,73 @@ export class HomeScene extends Phaser.Scene {
     const cx = w / 2;
     const find = (n: string) => this.root.getByName(n) as any;
 
-    // top bar
-    find('avatar').setPosition(34, 32);
-    find('coin').setPosition(w - 230, 30);
-    find('bonus').setPosition(w - 96, 66);
+    // top bar — avatar far left, coin far right, bonus pill beside the avatar
+    const topY = Phaser.Math.Clamp(Math.round(h * 0.085), 20, 40);
+    find('avatar').setPosition(26, topY).setScale(Phaser.Math.Clamp(topY / 30, 0.72, 1.05));
+    find('coin').setPosition(w - 196, topY);
 
     if (w >= h) this.layoutLandscape(w, h, cx, find);
     else this.layoutPortrait(w, h, cx, find);
   }
 
-  // Two columns side by side — designed for a phone held sideways.
+  // Two columns side by side — designed for a phone held sideways. Everything
+  // is sized from the available height so it fits short landscape screens.
   private layoutLandscape(w: number, h: number, cx: number, find: (n: string) => any): void {
-    const titleSize = Phaser.Math.Clamp(Math.round(h / 11), 28, 56);
-    const titleY = h * 0.1;
-    const subY = titleY + titleSize * 0.62;
+    const topY = Phaser.Math.Clamp(Math.round(h * 0.085), 20, 40);
+    find('bonus').setPosition(116, topY).setSize2(150, 30);
+
+    const titleSize = Phaser.Math.Clamp(Math.round(h * 0.13), 22, 46);
+    const titleY = topY + 2;
+    const subY = titleY + titleSize * 0.5 + 2;
     this.placeTitle(find, cx, titleY, subY, titleSize);
 
-    const cwid = Phaser.Math.Clamp(Math.min(w * 0.86, 940), 460, 940);
+    // Reserve a footer for the PLAY button so it is always fully visible.
+    const playH = Phaser.Math.Clamp(Math.round(h * 0.15), 42, 62);
+    const playY = h - playH / 2 - 6;
+
+    // Options panel fills the space between the subtitle and the footer.
+    const panelTop = subY + titleSize * 0.4 + 6;
+    const panelBottom = playY - playH / 2 - 10;
+    const panelH = panelBottom - panelTop;
+    const cwid = Phaser.Math.Clamp(Math.min(w * 0.9, 960), 460, 960);
     const colL = cx - cwid / 4;
     const colR = cx + cwid / 4;
     const inner = cwid / 2 - 40;
 
-    const top = subY + 44;
-    const r1 = top + 28; // controls row 1
-    const r2lab = r1 + 56; // labels row 2
-    const r2 = r2lab + 26; // controls row 2
-
-    find('modeLabel').setPosition(colL, top).setOrigin(0.5);
-    find('playersLabel').setPosition(colR, top).setOrigin(0.5);
-
-    this.modeBtns.mindi.setPosition(colL - inner / 4 - 4, r1).setSize2(inner / 2 - 8, 48);
-    this.modeBtns.double.setPosition(colL + inner / 4 + 4, r1).setSize2(inner / 2 - 8, 48);
-
-    const pw = inner / 5;
-    for (let n = 2; n <= 6; n++) {
-      this.playerBtns[n].setPosition(colR - inner / 2 + (n - 2) * pw + pw / 2, r1).setSize2(pw - 6, 46);
-    }
-
-    find('diffLabel').setPosition(colL, r2lab).setOrigin(0.5);
-    find('betLabel').setPosition(colR - inner / 2, r2lab).setOrigin(0, 0.5);
-    find('betText').setPosition(colR + inner / 2, r2lab).setOrigin(1, 0.5);
-
-    this.diffBtns.learner.setPosition(colL - inner / 4 - 4, r2).setSize2(inner / 2 - 8, 44);
-    this.diffBtns.expert.setPosition(colL + inner / 4 + 4, r2).setSize2(inner / 2 - 8, 44);
-    this.betSlider.setPosition(colR, r2 + 2);
-    this.betSlider.setWidth(inner);
-
-    const panelTop = top - 30;
-    const panelBottom = r2 + 34;
     const pg = find('panel') as Phaser.GameObjects.Graphics;
     pg.setPosition(cx, (panelTop + panelBottom) / 2);
-    drawPanel(pg, cwid, panelBottom - panelTop, { radius: 20, glow: true });
+    drawPanel(pg, cwid, panelH, { radius: 18, glow: true });
 
-    const py = panelBottom + 44;
-    find('play').setPosition(cx, py).setSize2(Phaser.Math.Clamp(cwid * 0.34, 240, 320), 64);
-    find('settings').setPosition(w - 150, h - 30).setSize2(260, 40);
+    // Four sub-rows inside the panel: label / controls, twice.
+    const lab1 = panelTop + panelH * 0.13;
+    const row1 = panelTop + panelH * 0.36;
+    const lab2 = panelTop + panelH * 0.63;
+    const row2 = panelTop + panelH * 0.86;
+    const bh = Phaser.Math.Clamp(Math.round(panelH * 0.2), 34, 52);
+
+    find('modeLabel').setPosition(colL, lab1).setOrigin(0.5);
+    find('playersLabel').setPosition(colR, lab1).setOrigin(0.5);
+    this.modeBtns.mindi.setPosition(colL - inner / 4 - 4, row1).setSize2(inner / 2 - 8, bh);
+    this.modeBtns.double.setPosition(colL + inner / 4 + 4, row1).setSize2(inner / 2 - 8, bh);
+    const pw = inner / 5;
+    for (let n = 2; n <= 6; n++) {
+      this.playerBtns[n].setPosition(colR - inner / 2 + (n - 2) * pw + pw / 2, row1).setSize2(pw - 6, bh);
+    }
+
+    find('diffLabel').setPosition(colL, lab2).setOrigin(0.5);
+    find('betLabel').setPosition(colR - inner / 2, lab2).setOrigin(0, 0.5);
+    find('betText').setPosition(colR + inner / 2, lab2).setOrigin(1, 0.5);
+    this.diffBtns.learner.setPosition(colL - inner / 4 - 4, row2).setSize2(inner / 2 - 8, bh);
+    this.diffBtns.expert.setPosition(colL + inner / 4 + 4, row2).setSize2(inner / 2 - 8, bh);
+    this.betSlider.setPosition(colR, row2);
+    this.betSlider.setWidth(inner);
+
+    const playW = Phaser.Math.Clamp(cwid * 0.32, 220, 300);
+    find('play').setPosition(cx, playY).setSize2(playW, playH);
+    find('settings').setPosition(w - 150, playY).setSize2(220, Math.min(playH, 40));
+    const instW = Phaser.Math.Clamp(cx - playW / 2 - 24, 120, 200);
+    find('install').setPosition(8 + instW / 2, playY).setSize2(instW, Math.min(playH, 44));
+    find('installHint').setPosition(cx, playY - playH / 2 - 16).setFontSize(Phaser.Math.Clamp(Math.round(h * 0.045), 12, 18));
   }
 
   // Single column — only seen briefly before the "rotate" prompt; kept tidy.
@@ -344,7 +389,9 @@ export class HomeScene extends Phaser.Scene {
     drawPanel(pg, cwid, y - panelTop, { radius: 18, glow: true });
     y += 30;
     find('play').setPosition(cx, y).setSize2(280, 64);
-    y += 58;
-    find('settings').setPosition(cx, y).setSize2(280, 42);
+    y += 56;
+    find('settings').setPosition(cx - 74, y).setSize2(148, 42);
+    find('install').setPosition(cx + 80, y).setSize2(160, 42);
+    find('installHint').setPosition(cx, y + 30).setFontSize(13);
   }
 }
